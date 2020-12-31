@@ -922,12 +922,15 @@ class ListBudget(object):
         try:
             cumu = float(cu_str)
         except:
-            if "NAN" in cu_str.strip().upper():
+            #if "NAN" in cu_str.strip().upper():
+            if len(cu_str) > 0:
                 cumu = np.NaN
         try:
             flux = float(fx_str)
         except:
-            if "NAN" in fx_str.strip().upper():
+            t = np.double(fx_str)
+            #if "NAN" in fx_str.strip().upper():
+            if len(fx_str) > 0:
                 flux = np.NaN
         return entry, flux, cumu
 
