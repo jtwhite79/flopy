@@ -928,7 +928,6 @@ class ListBudget(object):
         try:
             flux = float(fx_str)
         except:
-            t = np.double(fx_str)
             #if "NAN" in fx_str.strip().upper():
             if len(fx_str) > 0:
                 flux = np.NaN
