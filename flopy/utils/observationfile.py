@@ -5,7 +5,7 @@ from ..utils.utils_def import FlopyBinaryData
 
 class ObsFiles(FlopyBinaryData):
     def __init__(self):
-        super(ObsFiles, self).__init__()
+        super().__init__()
         return
 
     def get_times(self):
@@ -277,7 +277,7 @@ class Mf6Obs(ObsFiles):
         Class constructor.
 
         """
-        super(Mf6Obs, self).__init__()
+        super().__init__()
         # initialize class information
         self.verbose = verbose
         if isBinary:
@@ -296,7 +296,7 @@ class Mf6Obs(ObsFiles):
             self.nobs = self.read_integer()
 
             # # continue reading the file
-            # self.v = np.empty(self.nobs, dtype=np.float)
+            # self.v = np.empty(self.nobs, dtype=float)
             # self.v.fill(1.0E+32)
 
             # read obsnames
@@ -386,7 +386,7 @@ class HydmodObs(ObsFiles):
         Class constructor.
 
         """
-        super(HydmodObs, self).__init__()
+        super().__init__()
         # initialize class information
         self.verbose = verbose
         # --open binary head file
@@ -401,7 +401,7 @@ class HydmodObs(ObsFiles):
 
         # continue reading the file
         self.itmuni = self.read_integer()
-        self.v = np.empty(self.nobs, dtype=np.float)
+        self.v = np.empty(self.nobs, dtype=float)
         self.v.fill(1.0e32)
         ctime = self.read_text(nchar=4)
         self.hydlbl_len = int(hydlbl_len)
@@ -477,7 +477,7 @@ class SwrObs(ObsFiles):
         Class constructor.
 
         """
-        super(SwrObs, self).__init__()
+        super().__init__()
         self.set_float(precision=precision)
         # initialize class information
         self.verbose = verbose

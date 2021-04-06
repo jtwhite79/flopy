@@ -1019,18 +1019,18 @@ def test_sr_with_Map():
         modelmap = flopy.plot.ModelMap(model=m, xul=xul, yul=yul,
                                        rotation=rotation)
         assert len(w) == 2, len(w)
-        assert w[0].category == PendingDeprecationWarning, w[0]
-        assert 'ModelMap will be replaced by PlotMapView' in str(w[0].message)
+        assert w[0].category == DeprecationWarning, w[0]
+        assert 'ModelMap is deprecated' in str(w[0].message)
         assert w[1].category == DeprecationWarning, w[1]
         assert 'xul/yul have been deprecated' in str(w[1].message)
 
-    lc = modelmap.plot_grid()
+    pc = modelmap.plot_grid()
     xll, yll = modelmap.mg.xoffset, modelmap.mg.yoffset
     plt.close()
 
     def check_vertices():
-        xllp, yllp = lc._paths[0].vertices[0]
-        xulp, yulp = lc._paths[0].vertices[1]
+        xllp, yllp = pc._paths[780].vertices[3]
+        xulp, yulp = pc._paths[0].vertices[0]
         assert np.abs(xllp - xll) < 1e-6
         assert np.abs(yllp - yll) < 1e-6
         assert np.abs(xulp - xul) < 1e-6
@@ -1044,10 +1044,10 @@ def test_sr_with_Map():
         modelmap = flopy.plot.ModelMap(model=m, xll=xll, yll=yll,
                                        rotation=rotation)
         assert len(w) == 1, len(w)
-        assert w[0].category == PendingDeprecationWarning, w[0]
-        assert 'ModelMap will be replaced by PlotMapView' in str(w[0].message)
+        assert w[0].category == DeprecationWarning, w[0]
+        assert 'ModelMap is deprecated' in str(w[0].message)
 
-    lc = modelmap.plot_grid()
+    pc = modelmap.plot_grid()
     check_vertices()
     plt.close()
 
@@ -1062,10 +1062,10 @@ def test_sr_with_Map():
         modelmap = flopy.plot.ModelMap(model=m)
 
         assert len(w) == 1, len(w)
-        assert w[0].category == PendingDeprecationWarning, w[0]
-        assert 'ModelMap will be replaced by PlotMapView' in str(w[0].message)
+        assert w[0].category == DeprecationWarning, w[0]
+        assert 'ModelMap is deprecated' in str(w[0].message)
 
-    lc = modelmap.plot_grid()
+    pc = modelmap.plot_grid()
     check_vertices()
     plt.close()
 
@@ -1078,10 +1078,10 @@ def test_sr_with_Map():
         modelmap = flopy.plot.ModelMap(model=m, sr=sr)
 
         assert len(w) == 1, len(w)
-        assert w[0].category == PendingDeprecationWarning, w[0]
-        assert 'ModelMap will be replaced by PlotMapView' in str(w[0].message)
+        assert w[0].category == DeprecationWarning, w[0]
+        assert 'ModelMap is deprecated' in str(w[0].message)
 
-    lc = modelmap.plot_grid()
+    pc = modelmap.plot_grid()
     check_vertices()
     plt.close()
 
@@ -1111,14 +1111,14 @@ def test_sr_with_Map():
             assert 'SpatialReference has been deprecated' in str(w[0].message)
             assert w[1].category == DeprecationWarning, w[1]
             assert 'SpatialReference has been deprecated' in str(w[1].message)
-        assert w[-3].category == PendingDeprecationWarning, w[-3]
-        assert 'ModelCrossSection will be replaced by' in str(w[-3].message)
+        assert w[-3].category == DeprecationWarning, w[-3]
+        assert 'ModelCrossSection is Deprecated' in str(w[-3].message)
         assert w[-2].category == DeprecationWarning, w[-2]
         assert 'xul/yul have been deprecated' in str(w[-2].message)
         assert w[-1].category == DeprecationWarning, w[-1]
         assert 'xul/yul have been deprecated' in str(w[-1].message)
 
-    linecollection = modelxsect.plot_grid()
+    patchcollection = modelxsect.plot_grid()
     plt.close()
 
 
@@ -1132,23 +1132,18 @@ def test_modelgrid_with_PlotMapView():
     xll, yll, rotation = 500000., 2934000., 45.
 
     def check_vertices():
-        # vertices = modelmap.mg.xyvertices
-        xllp, yllp = lc._paths[0].vertices[0]
-        # xulp, yulp = lc._paths[0].vertices[1]
+        xllp, yllp = pc._paths[780].vertices[3]
         assert np.abs(xllp - xll) < 1e-6
         assert np.abs(yllp - yll) < 1e-6
-        # assert np.abs(xulp - xul) < 1e-6
-        # assert np.abs(yulp - yul) < 1e-6
 
-    #    check_vertices()
     m.modelgrid.set_coord_info(xoff=xll, yoff=yll, angrot=rotation)
     modelmap = flopy.plot.PlotMapView(model=m)
-    lc = modelmap.plot_grid()
+    pc = modelmap.plot_grid()
     check_vertices()
     plt.close()
 
     modelmap = flopy.plot.PlotMapView(modelgrid=m.modelgrid)
-    lc = modelmap.plot_grid()
+    pc = modelmap.plot_grid()
     check_vertices()
     plt.close()
 
@@ -1157,13 +1152,11 @@ def test_modelgrid_with_PlotMapView():
     # Model domain and grid definition
     dis = flopy.modflow.ModflowDis(mf, nlay=1, nrow=10, ncol=20, delr=1.,
                                    delc=1., xul=100, yul=210)
-    # fig, ax = plt.subplots()
+
     verts = [[101., 201.], [119., 209.]]
-    # modelxsect = flopy.plot.ModelCrossSection(model=mf, line={'line': verts},
-    #                                           xul=mf.dis.sr.xul, yul=mf.dis.sr.yul)
     mf.modelgrid.set_coord_info(xoff=mf.dis.sr.xll, yoff=mf.dis.sr.yll)
     modelxsect = flopy.plot.PlotCrossSection(model=mf, line={'line': verts})
-    linecollection = modelxsect.plot_grid()
+    patchcollection = modelxsect.plot_grid()
     plt.close()
 
 
@@ -1206,7 +1199,7 @@ def test_mapview_plot_bc():
         raise AssertionError("Boundary condition was not drawn")
 
     for col in ax.collections:
-        if not isinstance(col, QuadMesh):
+        if not isinstance(col, PatchCollection):
             raise AssertionError("Unexpected collection type")
     plt.close()
 
@@ -1231,7 +1224,7 @@ def test_mapview_plot_bc():
         raise AssertionError("Boundary condition was not drawn")
 
     for col in ax.collections:
-        if not isinstance(col, QuadMesh):
+        if not isinstance(col, PatchCollection):
             raise AssertionError("Unexpected collection type")
     plt.close()
 
@@ -1249,7 +1242,7 @@ def test_mapview_plot_bc():
         raise AssertionError("Boundary condition was not drawn")
 
     for col in ax.collections:
-        if not isinstance(col, QuadMesh):
+        if not isinstance(col, PatchCollection):
             raise AssertionError("Unexpected collection type")
     plt.close()
 
@@ -1403,20 +1396,29 @@ def test_get_vertices():
 
 
 def test_get_lrc_get_node():
-    node = 50
+    nlay, nrow, ncol = 3, 4, 5
     ml = flopy.modflow.Modflow()
-    dis = flopy.modflow.ModflowDis(ml, nlay=1, nrow=1, ncol=201, delr=10,
-                                   delc=1, top=50, botm=0)
-    lrc = dis.get_lrc([node, ])
-    if lrc[0] != (0, 0, 50):
-        raise AssertionError("get_lrc() is not returning zero based (k, i, j)")
-    nodes = dis.get_node(lrc)
-    if nodes[0] != node:
-        raise AssertionError('get_node() is not returning zero based node')
+    dis = flopy.modflow.ModflowDis(ml, nlay=nlay, nrow=nrow, ncol=ncol,
+                                   top=50, botm=[0, -1, -2])
+    nodes = list(range(nlay * nrow * ncol))
+    indices = np.indices((nlay, nrow, ncol))
+    layers = indices[0].flatten()
+    rows = indices[1].flatten()
+    cols = indices[2].flatten()
+    for node, (l, r, c) in enumerate(zip(layers, rows, cols)):
+        # ensure get_lrc returns zero-based layer row col
+        lrc = dis.get_lrc(node)[0]
+        assert lrc == (l, r, c), "get_lrc() returned {}, expecting {}".format(lrc, (l, r, c))
+        # ensure get_node returns zero-based node number
+        n = dis.get_node((l, r, c))[0]
+        assert node == n, "get_node() returned {}, expecting {}".format(n, node)
+    return
 
 
 def test_vertex_model_dot_plot():
     import matplotlib.pyplot as plt
+    from matplotlib import rcParams
+    rcParams["figure.max_open_warning"] = 36
     # load up the vertex example problem
     sim_name = "mfsim.nam"
     sim_path = "../examples/data/mf6/test003_gwftri_disv"
@@ -1425,16 +1427,28 @@ def test_vertex_model_dot_plot():
                                            sim_ws=sim_path)
     disv_ml = disv_sim.get_model('gwf_1')
     ax = disv_ml.plot()
-    assert ax
+    assert isinstance(ax, list)
+    assert len(ax) == 36
     plt.close('all')
 
 
 def test_model_dot_plot():
     import matplotlib.pyplot as plt
-    loadpth = os.path.join('..', 'examples', 'data', 'secp')
-    ml = flopy.modflow.Modflow.load('secp.nam', model_ws=loadpth)
+    loadpth = os.path.join('..', 'examples', 'data', 'mf2005_test')
+    ml = flopy.modflow.Modflow.load('ibs2k.nam', 'mf2k', model_ws=loadpth)
     ax = ml.plot()
-    assert ax
+    assert isinstance(ax, list)
+    assert len(ax) == 20
+    plt.close('all')
+
+    # plot specific dataset
+    ax = ml.bcf6.hy.plot()
+    assert isinstance(ax, list)
+    assert len(ax) == 2
+
+    # special case where nlay != plottable
+    ax = ml.bcf6.vcont.plot()
+    assert isinstance(ax, plt.Axes)
     plt.close('all')
 
 
@@ -1681,6 +1695,7 @@ def main():
     # test_mt_modelgrid()
     # test_rotation()
     # test_model_dot_plot()
+    test_get_lrc_get_node()
     # test_vertex_model_dot_plot()
     # test_sr_with_Map()
     # test_modelgrid_with_PlotMapView()
@@ -1704,9 +1719,9 @@ def main():
     # test_export_contourf()
     # test_sr()
     # test_shapefile_polygon_closed()
-    test_mapview_plot_bc()
-    test_crosssection_plot_bc()
-    test_output_helper_shapefile_export()
+    # test_mapview_plot_bc()
+    # test_crosssection_plot_bc()
+    # test_output_helper_shapefile_export()
 
 if __name__ == '__main__':
 

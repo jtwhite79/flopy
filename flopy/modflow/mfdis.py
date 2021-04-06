@@ -62,7 +62,7 @@ class ModflowDis(Package):
         Number of time steps in each stress period (default is 1).
     tsmult : float or array of floats (nper)
         Time step multiplier (default is 1.0).
-    steady : boolean or array of boolean (nper)
+    steady : bool or array of bool (nper)
         true or False indicating whether or not stress period is steady state
         (default is True).
     itmuni : int
@@ -236,9 +236,7 @@ class ModflowDis(Package):
         self.tsmult = Util2d(
             model, (self.nper,), np.float32, tsmult, name="tsmult"
         )
-        self.steady = Util2d(
-            model, (self.nper,), np.bool, steady, name="steady"
-        )
+        self.steady = Util2d(model, (self.nper,), bool, steady, name="steady")
 
         try:
             self.itmuni = int(itmuni)
@@ -356,7 +354,7 @@ class ModflowDis(Package):
                 totim.append(t)
                 if m > 1:
                     dt *= m
-        return np.array(totim, dtype=np.float)
+        return np.array(totim, dtype=float)
 
     def get_final_totim(self):
         """
@@ -553,7 +551,7 @@ class ModflowDis(Package):
 
     def get_lrc(self, nodes):
         """
-        Get layer, row, column from a list of zero based
+        Get zero-based layer, row, column from a list of zero-based
         MODFLOW node numbers.
 
         Returns
@@ -561,25 +559,11 @@ class ModflowDis(Package):
         v : list of tuples containing the layer (k), row (i),
             and column (j) for each node in the input list
         """
-        if not isinstance(nodes, list):
-            nodes = [nodes]
-        nrc = self.nrow * self.ncol
-        v = []
-        for node in nodes:
-            k = int((node + 1) / nrc)
-            if (k * nrc) < node:
-                k += 1
-            ij = int(node - (k - 1) * nrc)
-            i = int(ij / self.ncol)
-            if (i * self.ncol) < ij:
-                i += 1
-            j = ij - (i - 1) * self.ncol
-            v.append((k - 1, i - 1, j))
-        return v
+        return self.parent.modelgrid.get_lrc(nodes)
 
     def get_node(self, lrc_list):
         """
-        Get node number from a list of zero based MODFLOW
+        Get zero-based node number from a list of zero-based MODFLOW
         layer, row, column tuples.
 
         Returns
@@ -587,14 +571,7 @@ class ModflowDis(Package):
         v : list of MODFLOW nodes for each layer (k), row (i),
             and column (j) tuple in the input list
         """
-        if not isinstance(lrc_list, list):
-            lrc_list = [lrc_list]
-        nrc = self.nrow * self.ncol
-        v = []
-        for [k, i, j] in lrc_list:
-            node = int(((k) * nrc) + ((i) * self.ncol) + j)
-            v.append(node)
-        return v
+        return self.parent.modelgrid.get_node(lrc_list)
 
     def get_layer(self, i, j, elev):
         """Return the layer for an elevation at an i, j location.
@@ -678,7 +655,7 @@ class ModflowDis(Package):
 
         Parameters
         ----------
-        check : boolean
+        check : bool
             Check package data for common errors. (default True)
 
         Returns
@@ -827,7 +804,7 @@ class ModflowDis(Package):
             handle.  In this case ext_unit_dict is required, which can be
             constructed using the function
             :class:`flopy.utils.mfreadnam.parsenamefile`.
-        check : boolean
+        check : bool
             Check package data for common errors. (default True)
 
         Returns
@@ -941,13 +918,13 @@ class ModflowDis(Package):
                 )
             )
             print("   loading laycbd...")
-        laycbd = np.zeros(nlay, dtype=np.int)
+        laycbd = np.zeros(nlay, dtype=int)
         d = 0
         while True:
             line = f.readline()
             raw = line.strip("\n").split()
             for val in raw:
-                if (np.int(val)) != 0:
+                if int(val) != 0:
                     laycbd[d] = 1
                 d += 1
                 if d == nlay:
