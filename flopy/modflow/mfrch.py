@@ -448,6 +448,12 @@ class ModflowRch(Package):
 
         if nper is None:
             nrow, ncol, nlay, nper = model.get_nrow_ncol_nlay_nper()
+
+        # handle the unstructured case - assume recharge is applied to layer 1?
+        if nrow is None:
+            nrow = 1
+            ncol = ncol[0]
+
         # read data for every stress period
         rech = {}
         irch = None
