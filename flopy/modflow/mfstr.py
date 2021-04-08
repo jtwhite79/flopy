@@ -631,7 +631,7 @@ class ModflowStr(Package):
                     itmp = -1
             else:
                 tdata = self.stress_period_data[iper]
-                sdata = self.segment_data[iper]
+
                 if isinstance(tdata, int):
                     itmp = tdata
                 elif tdata is None:
@@ -670,6 +670,7 @@ class ModflowStr(Package):
 
                 # dataset 9
                 if self.ntrib > 0:
+                    sdata = self.segment_data[iper]
                     for line in sdata:
                         ds9 = []
                         for idx in range(self.ntrib):
@@ -680,6 +681,7 @@ class ModflowStr(Package):
 
                 # dataset 10
                 if self.ndiv > 0:
+                    sdata = self.segment_data[iper]
                     for line in sdata:
                         f_str.write(
                             write_fixed_var([line[-1]], length=10, free=free)
