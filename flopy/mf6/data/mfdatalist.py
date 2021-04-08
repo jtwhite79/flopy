@@ -122,7 +122,7 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
         dimensions=None,
         package=None,
     ):
-        super(MFList, self).__init__(
+        super().__init__(
             sim_data, model_or_sim, structure, enable, path, dimensions
         )
         try:
@@ -251,7 +251,7 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
 
     def new_simulation(self, sim_data):
         try:
-            super(MFList, self).new_simulation(sim_data)
+            super().new_simulation(sim_data)
             self._data_storage = self._new_storage()
         except Exception as ex:
             type_, value_, traceback_ = sys.exc_info()
@@ -356,6 +356,31 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
     def get_data(self, apply_mult=False, **kwargs):
         return self._get_data(apply_mult, **kwargs)
 
+    def _get_min_record_entries(self, data=None):
+        try:
+            if isinstance(data, dict) and "data" in data:
+                data = data["data"]
+            type_list = self._get_storage_obj().build_type_list(
+                data=data, min_size=True
+            )
+        except Exception as ex:
+            type_, value_, traceback_ = sys.exc_info()
+            raise MFDataException(
+                self.structure.get_model(),
+                self.structure.get_package(),
+                self._path,
+                "getting min record entries",
+                self.structure.name,
+                inspect.stack()[0][3],
+                type_,
+                value_,
+                traceback_,
+                None,
+                self._simulation_data.debug,
+                ex,
+            )
+        return len(type_list)
+
     def _set_data(self, data, autofill=False, check_data=True):
         if isinstance(data, dict):
             if "data" in data:
@@ -366,7 +391,7 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
             data_check = data
         if iterable(data_check) and check_data:
             # verify data length
-            min_line_size = self.structure.get_min_record_entries()
+            min_line_size = self._get_min_record_entries(data)
             if isinstance(data_check[0], np.record) or (
                 iterable(data_check[0]) and not isinstance(data_check[0], str)
             ):
@@ -481,7 +506,6 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
 
     def _check_line_size(self, data_line, min_line_size):
         if 0 < len(data_line) < min_line_size:
-            min_line_size = self.structure.get_min_record_entries()
             message = (
                 "Data line {} only has {} entries, "
                 "minimum number of entries is "
@@ -773,17 +797,18 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
                             for aux_var_name in aux_var_names[0]:
                                 if aux_var_name.lower() != "auxiliary":
                                     data_val = data_line[index]
-                                    text_line.append(
-                                        to_string(
-                                            data_val,
-                                            data_item.type,
-                                            self._simulation_data,
-                                            self._data_dimensions,
-                                            data_item.is_cellid,
-                                            data_item.possible_cellid,
-                                            data_item,
+                                    if data_val is not None:
+                                        text_line.append(
+                                            to_string(
+                                                data_val,
+                                                data_item.type,
+                                                self._simulation_data,
+                                                self._data_dimensions,
+                                                data_item.is_cellid,
+                                                data_item.possible_cellid,
+                                                data_item,
+                                            )
                                         )
-                                    )
                                     index += 1
                     except Exception as ex:
                         type_, value_, traceback_ = sys.exc_info()
@@ -1099,7 +1124,7 @@ class MFList(mfdata.MFMultiDimVar, DataListInterface):
         pre_data_comments=None,
         external_file_info=None,
     ):
-        super(MFList, self).load(
+        super().load(
             first_line, file_handle, block_header, pre_data_comments=None
         )
         self._resync()
@@ -1284,7 +1309,7 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
         dimensions=None,
         package=None,
     ):
-        super(MFTransientList, self).__init__(
+        super().__init__(
             sim_data=sim_data,
             model_or_sim=model_or_sim,
             structure=structure,
@@ -1400,21 +1425,19 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
                     yield name, m3d
 
     def to_array(self, kper=0, mask=False):
-        return super(MFTransientList, self).to_array(kper, mask)
+        return super().to_array(kper, mask)
 
     def remove_transient_key(self, transient_key):
         if transient_key in self._data_storage:
             del self._data_storage[transient_key]
 
     def add_transient_key(self, transient_key):
-        super(MFTransientList, self).add_transient_key(transient_key)
+        super().add_transient_key(transient_key)
         if isinstance(transient_key, int):
             stress_period = transient_key
         else:
             stress_period = 1
-        self._data_storage[transient_key] = super(
-            MFTransientList, self
-        )._new_storage(stress_period)
+        self._data_storage[transient_key] = super()._new_storage(stress_period)
 
     @property
     def data(self):
@@ -1444,7 +1467,7 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
                 ):
                     fname, ext = os.path.splitext(external_file_path)
                     full_name = "{}_{}{}".format(fname, sp + 1, ext)
-                    super(MFTransientList, self).store_as_external_file(
+                    super().store_as_external_file(
                         full_name,
                         binary,
                         replace_existing_external,
@@ -1464,9 +1487,7 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
                         if sp in self._data_storage:
                             self.get_data_prep(sp)
                             output.append(
-                                super(MFTransientList, self).get_data(
-                                    apply_mult=apply_mult
-                                )
+                                super().get_data(apply_mult=apply_mult)
                             )
                         else:
                             output.append(None)
@@ -1475,12 +1496,10 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
                     output = {}
                     for key in self._data_storage.keys():
                         self.get_data_prep(key)
-                        output[key] = super(MFTransientList, self).get_data(
-                            apply_mult=apply_mult
-                        )
+                        output[key] = super().get_data(apply_mult=apply_mult)
                     return output
             self.get_data_prep(key)
-            return super(MFTransientList, self).get_data(apply_mult=apply_mult)
+            return super().get_data(apply_mult=apply_mult)
         else:
             return None
 
@@ -1496,14 +1515,12 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
                         del_keys.append(key)
                     else:
                         self._set_data_prep(list_item, key)
-                        super(MFTransientList, self).set_data(
-                            list_item, autofill=autofill
-                        )
+                        super().set_data(list_item, autofill=autofill)
                 for key in del_keys:
                     del data[key]
             else:
                 self._set_data_prep(data["data"], key)
-                super(MFTransientList, self).set_data(data, autofill)
+                super().set_data(data, autofill)
         else:
             if key is None:
                 # search for a key
@@ -1516,15 +1533,13 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
                 self.remove_transient_key(key)
             else:
                 self._set_data_prep(data, key)
-                super(MFTransientList, self).set_data(data, autofill)
+                super().set_data(data, autofill)
 
     def get_file_entry(
         self, key=0, ext_file_action=ExtFileAction.copy_relative_paths
     ):
         self._get_file_entry_prep(key)
-        return super(MFTransientList, self).get_file_entry(
-            ext_file_action=ext_file_action
-        )
+        return super().get_file_entry(ext_file_action=ext_file_action)
 
     def load(
         self,
@@ -1535,7 +1550,7 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
         external_file_info=None,
     ):
         self._load_prep(block_header)
-        return super(MFTransientList, self).load(
+        return super().load(
             first_line,
             file_handle,
             block_header,
@@ -1545,11 +1560,11 @@ class MFTransientList(MFList, mfdata.MFTransient, DataListInterface):
 
     def append_list_as_record(self, record, key=0):
         self._append_list_as_record_prep(record, key)
-        super(MFTransientList, self).append_list_as_record(record)
+        super().append_list_as_record(record)
 
     def update_record(self, record, key_index, key=0):
         self._update_record_prep(key)
-        super(MFTransientList, self).update_record(record, key_index)
+        super().update_record(record, key_index)
 
     def _new_storage(self, stress_period=0):
         return OrderedDict()
@@ -1696,7 +1711,7 @@ class MFMultipleList(MFTransientList):
         dimensions=None,
         package=None,
     ):
-        super(MFMultipleList, self).__init__(
+        super().__init__(
             sim_data=sim_data,
             model_or_sim=model_or_sim,
             structure=structure,
@@ -1707,6 +1722,4 @@ class MFMultipleList(MFTransientList):
         )
 
     def get_data(self, key=None, apply_mult=False, **kwargs):
-        return super(MFMultipleList, self).get_data(
-            key=key, apply_mult=apply_mult, **kwargs
-        )
+        return super().get_data(key=key, apply_mult=apply_mult, **kwargs)

@@ -176,7 +176,7 @@ def to_cvfd(
     # In the process, filter out any duplicate vertices
     vertexdict = OrderedDict()
     vertexlist = []
-    xcyc = np.empty((ncells, 2), dtype=np.float)
+    xcyc = np.empty((ncells, 2), dtype=float)
     iv = 0
     nvertstart = 0
     if verbose:
@@ -304,7 +304,7 @@ def shapefile_to_xcyc(shp):
     sf = shapefile.Reader(shp)
     shapes = sf.shapes()
     ncells = len(shapes)
-    xcyc = np.empty((ncells, 2), dtype=np.float)
+    xcyc = np.empty((ncells, 2), dtype=float)
     for icell, shape in enumerate(shapes):
         points = shape.points
         xc, yc = centroid_of_polygon(points)
@@ -345,20 +345,18 @@ def gridlist_to_verts(gridlist):
     return verts, iverts
 
 
-def get_disv_gridprops(verts, iverts):
+def get_disv_gridprops(verts, iverts, xcyc=None):
     """
 
-    Take a list of flopy structured model grids and convert them into vertices.
-    The idomain can be set to remove cells in a parent grid.  Cells from a
-    child grid will patched in to make a single set of vertices.  Cells will
-    be numbered according to consecutive numbering of active cells in the
-    grid list.
+    Calculate disv grid properties from verts and iverts
 
     Parameters
     ----------
-    gridlist : list
-        List of flopy.discretization.modelgrid.  Must be of type structured
-        grids
+    verts : ndarray
+        2d array of x, y vertices
+
+    iverts : list
+        list of size ncpl, with a list of vertex numbers for each cell
 
     Returns
     -------
@@ -369,12 +367,15 @@ def get_disv_gridprops(verts, iverts):
     """
     nvert = verts.shape[0]
     ncpl = len(iverts)
-    xcyc = np.empty((ncpl, 2), dtype=np.float)
-    area = np.empty(ncpl, dtype=np.float)
-    for icell in range(ncpl):
-        vlist = [(verts[ivert, 0], verts[ivert, 1]) for ivert in iverts[icell]]
-        xcyc[icell, 0], xcyc[icell, 1] = centroid_of_polygon(vlist)
-        area[icell] = abs(area_of_polygon(*zip(*vlist)))
+    if xcyc is None:
+        xcyc = np.empty((ncpl, 2), dtype=float)
+        for icell in range(ncpl):
+            vlist = [
+                (verts[ivert, 0], verts[ivert, 1]) for ivert in iverts[icell]
+            ]
+            xcyc[icell, 0], xcyc[icell, 1] = centroid_of_polygon(vlist)
+    else:
+        assert xcyc.shape == (ncpl, 2)
     vertices = []
     for i in range(nvert):
         vertices.append((i, verts[i, 0], verts[i, 1]))

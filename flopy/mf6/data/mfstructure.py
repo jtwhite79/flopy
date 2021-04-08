@@ -206,7 +206,7 @@ class DfnPackage(Dfn):
     """
 
     def __init__(self, package):
-        super(DfnPackage, self).__init__()
+        super().__init__()
         self.package = package
         self.package_type = package._package_type
         self.dfn_file_name = package.dfn_file_name
@@ -468,7 +468,7 @@ class DfnFile(Dfn):
     """
 
     def __init__(self, file):
-        super(DfnFile, self).__init__()
+        super().__init__()
 
         dfn_path, tail = os.path.split(os.path.realpath(__file__))
         dfn_path = os.path.join(dfn_path, "dfn")
@@ -1037,10 +1037,24 @@ class MFDataItemStructure(object):
                     self.description = " ".join(arr_line[1:])
 
                 # clean self.description
-                self.description = self.description.replace("``", '"')
-                self.description = self.description.replace("''", '"')
+                replace_pairs = [
+                    ("``", '"'),  # double quotes
+                    ("''", '"'),
+                    ("`", "'"),  # single quotes
+                    ("~", " "),  # non-breaking space
+                    (r"\mf", "MODFLOW 6"),
+                    (r"\citep{konikow2009}", "(Konikow et al., 2009)"),
+                    (r"\citep{hill1990preconditioned}", "(Hill, 1990)"),
+                    (r"\ref{table:ftype}", "in mf6io.pdf"),
+                    (r"\ref{table:gwf-obstypetable}", "in mf6io.pdf"),
+                ]
+                for s1, s2 in replace_pairs:
+                    if s1 in self.description:
+                        self.description = self.description.replace(s1, s2)
 
                 # massage latex equations
+                self.description = self.description.replace("$<$", "<")
+                self.description = self.description.replace("$>$", ">")
                 if "$" in self.description:
                     descsplit = self.description.split("$")
                     mylist = [
@@ -1050,7 +1064,7 @@ class MFDataItemStructure(object):
                         + "`"
                         for i, j in zip(descsplit[::2], descsplit[1::2])
                     ]
-                    mylist.append(descsplit[-1])
+                    mylist.append(descsplit[-1].replace("\\", ""))
                     self.description = "".join(mylist)
                 else:
                     self.description = self.description.replace("\\", "")
@@ -1862,7 +1876,7 @@ class MFDataStructure(object):
                         elif var_type[0] == DatumType.integer:
                             return np.int32
                         else:
-                            return np.object
+                            return object
                     else:
                         return var_type[2]
         return None
@@ -2408,7 +2422,7 @@ class MFStructure(object):
 
     def __new__(cls, internal_request=False, load_from_dfn_files=False):
         if cls._instance is None:
-            cls._instance = super(MFStructure, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
 
             # Initialize variables
             cls._instance.mf_version = 6

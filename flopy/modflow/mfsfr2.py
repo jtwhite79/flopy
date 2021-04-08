@@ -609,16 +609,16 @@ class ModflowSfr2(Package):
 
     def __setattr__(self, key, value):
         if key == "nstrm":
-            super(ModflowSfr2, self).__setattr__("_nstrm", value)
+            super().__setattr__("_nstrm", value)
         elif key == "dataset_5":
-            super(ModflowSfr2, self).__setattr__("_dataset_5", value)
+            super().__setattr__("_dataset_5", value)
         elif key == "segment_data":
-            super(ModflowSfr2, self).__setattr__("segment_data", value)
+            super().__setattr__("segment_data", value)
             self._dataset_5 = None
         elif key == "const":
-            super(ModflowSfr2, self).__setattr__("_const", value)
+            super().__setattr__("_const", value)
         else:  # return to default behavior of pakbase
-            super(ModflowSfr2, self).__setattr__(key, value)
+            super().__setattr__(key, value)
 
     @property
     def const(self):
@@ -754,12 +754,12 @@ class ModflowSfr2(Package):
             # include node column for structured grids (useful for indexing)
             return np.dtype(
                 [
-                    ("node", np.int),
-                    ("k", np.int),
-                    ("i", np.int),
-                    ("j", np.int),
-                    ("iseg", np.int),
-                    ("ireach", np.int),
+                    ("node", int),
+                    ("k", int),
+                    ("i", int),
+                    ("j", int),
+                    ("iseg", int),
+                    ("ireach", int),
                     ("rchlen", np.float32),
                     ("strtop", np.float32),
                     ("slope", np.float32),
@@ -769,16 +769,16 @@ class ModflowSfr2(Package):
                     ("thti", np.float32),
                     ("eps", np.float32),
                     ("uhc", np.float32),
-                    ("reachID", np.int),
-                    ("outreach", np.int),
+                    ("reachID", int),
+                    ("outreach", int),
                 ]
             )
         else:
             return np.dtype(
                 [
-                    ("node", np.int),
-                    ("iseg", np.int),
-                    ("ireach", np.int),
+                    ("node", int),
+                    ("iseg", int),
+                    ("ireach", int),
                     ("rchlen", np.float32),
                     ("strtop", np.float32),
                     ("slope", np.float32),
@@ -788,8 +788,8 @@ class ModflowSfr2(Package):
                     ("thti", np.float32),
                     ("eps", np.float32),
                     ("uhc", np.float32),
-                    ("reachID", np.int),
-                    ("outreach", np.int),
+                    ("reachID", int),
+                    ("outreach", int),
                 ]
             )
 
@@ -797,12 +797,12 @@ class ModflowSfr2(Package):
     def get_default_segment_dtype():
         return np.dtype(
             [
-                ("nseg", np.int),
-                ("icalc", np.int),
-                ("outseg", np.int),
-                ("iupseg", np.int),
-                ("iprior", np.int),
-                ("nstrpts", np.int),
+                ("nseg", int),
+                ("icalc", int),
+                ("outseg", int),
+                ("iupseg", int),
+                ("iprior", int),
+                ("nstrpts", int),
                 ("flow", np.float32),
                 ("runoff", np.float32),
                 ("etsw", np.float32),

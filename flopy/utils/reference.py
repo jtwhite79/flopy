@@ -138,8 +138,8 @@ class SpatialReference(object):
         length_multiplier=None,
     ):
         warnings.warn(
-            "SpatialReference has been deprecated. Use StructuredGrid"
-            " instead.",
+            "SpatialReference has been deprecated and will be removed in "
+            "version 3.3.5. Use StructuredGrid instead.",
             category=DeprecationWarning,
         )
 
@@ -515,63 +515,57 @@ class SpatialReference(object):
     def __setattr__(self, key, value):
         reset = True
         if key == "delr":
-            super(SpatialReference, self).__setattr__(
-                "delr", np.atleast_1d(np.array(value))
-            )
+            super().__setattr__("delr", np.atleast_1d(np.array(value)))
         elif key == "delc":
-            super(SpatialReference, self).__setattr__(
-                "delc", np.atleast_1d(np.array(value))
-            )
+            super().__setattr__("delc", np.atleast_1d(np.array(value)))
         elif key == "xul":
-            super(SpatialReference, self).__setattr__("_xul", float(value))
+            super().__setattr__("_xul", float(value))
             self.origin_loc = "ul"
         elif key == "yul":
-            super(SpatialReference, self).__setattr__("_yul", float(value))
+            super().__setattr__("_yul", float(value))
             self.origin_loc = "ul"
         elif key == "xll":
-            super(SpatialReference, self).__setattr__("_xll", float(value))
+            super().__setattr__("_xll", float(value))
             self.origin_loc = "ll"
         elif key == "yll":
-            super(SpatialReference, self).__setattr__("_yll", float(value))
+            super().__setattr__("_yll", float(value))
             self.origin_loc = "ll"
         elif key == "length_multiplier":
-            super(SpatialReference, self).__setattr__(
-                "_length_multiplier", float(value)
-            )
+            super().__setattr__("_length_multiplier", float(value))
             # self.set_origin(xul=self.xul, yul=self.yul, xll=self.xll,
             #                yll=self.yll)
         elif key == "rotation":
-            super(SpatialReference, self).__setattr__("rotation", float(value))
+            super().__setattr__("rotation", float(value))
             # self.set_origin(xul=self.xul, yul=self.yul, xll=self.xll,
             #                yll=self.yll)
         elif key == "lenuni":
-            super(SpatialReference, self).__setattr__("_lenuni", int(value))
+            super().__setattr__("_lenuni", int(value))
             # self.set_origin(xul=self.xul, yul=self.yul, xll=self.xll,
             #                yll=self.yll)
         elif key == "units":
             value = value.lower()
             assert value in self.supported_units
-            super(SpatialReference, self).__setattr__("_units", value)
+            super().__setattr__("_units", value)
         elif key == "proj4_str":
-            super(SpatialReference, self).__setattr__("_proj4_str", value)
+            super().__setattr__("_proj4_str", value)
             # reset the units and epsg
             units = self._parse_units_from_proj4()
             if units is not None:
                 self._units = units
             self._epsg = None
         elif key == "epsg":
-            super(SpatialReference, self).__setattr__("_epsg", value)
+            super().__setattr__("_epsg", value)
             # reset the units and proj4
             self._units = None
             self._proj4_str = getproj4(self._epsg)
             self.crs = crs(epsg=value)
         elif key == "prj":
-            super(SpatialReference, self).__setattr__("prj", value)
+            super().__setattr__("prj", value)
             # translation to proj4 strings in crs class not robust yet
             # leave units and proj4 alone for now.
             self.crs = crs(prj=value, epsg=self.epsg)
         else:
-            super(SpatialReference, self).__setattr__(key, value)
+            super().__setattr__(key, value)
             reset = False
         if reset:
             self._reset()
@@ -923,7 +917,7 @@ class SpatialReference(object):
         Get a LineCollection of the grid
 
         """
-        from flopy.plot import ModelMap
+        from ..plot import ModelMap
 
         map = ModelMap(sr=self)
         lc = map.plot_grid(**kwargs)
@@ -1469,7 +1463,7 @@ class SpatialReference(object):
         nrowvert = self.nrow + 1
         ncolvert = self.ncol + 1
         npoints = nrowvert * ncolvert
-        verts = np.empty((npoints, 2), dtype=np.float)
+        verts = np.empty((npoints, 2), dtype=float)
         verts[:, 0] = x
         verts[:, 1] = y
         iverts = []
@@ -1496,7 +1490,7 @@ class SpatialReference(object):
         npoints = nrvncv * nlayvert
 
         # create and fill a 3d points array for the grid
-        verts = np.empty((npoints, 3), dtype=np.float)
+        verts = np.empty((npoints, 3), dtype=float)
         verts[:, 0] = np.tile(x, nlayvert)
         verts[:, 1] = np.tile(y, nlayvert)
         istart = 0
@@ -1539,7 +1533,7 @@ class SpatialReference(object):
         if ibound is not None:
 
             # go through the vertex list and mark vertices that are used
-            ivertrenum = np.zeros(npoints, dtype=np.int)
+            ivertrenum = np.zeros(npoints, dtype=int)
             for vlist in iverts:
                 for iv in vlist:
                     # mark vertices that are actually used
@@ -1569,11 +1563,11 @@ class SpatialReference(object):
     def get_3d_vertex_connectivity(self, nlay, top, bot, ibound=None):
         if ibound is None:
             ncells = nlay * self.nrow * self.ncol
-            ibound = np.ones((nlay, self.nrow, self.ncol), dtype=np.int)
+            ibound = np.ones((nlay, self.nrow, self.ncol), dtype=int)
         else:
             ncells = (ibound != 0).sum()
         npoints = ncells * 8
-        verts = np.empty((npoints, 3), dtype=np.float)
+        verts = np.empty((npoints, 3), dtype=float)
         iverts = []
         ipoint = 0
         for k in range(nlay):
@@ -1708,8 +1702,8 @@ class SpatialReferenceUnstructured(SpatialReference):
         length_multiplier=1.0,
     ):
         warnings.warn(
-            "SpatialReferenceUnstructured has been deprecated. "
-            "Use VertexGrid instead.",
+            "SpatialReferenceUnstructured has been deprecated and will be "
+            "removed in version 3.3.5. Use VertexGrid instead.",
             category=DeprecationWarning,
         )
         self.xc = xc
@@ -1827,9 +1821,9 @@ class SpatialReferenceUnstructured(SpatialReference):
         ncells, nverts = ll[0:2]
         ncells = int(ncells)
         nverts = int(nverts)
-        verts = np.empty((nverts, 2), dtype=np.float)
-        xc = np.empty((ncells), dtype=np.float)
-        yc = np.empty((ncells), dtype=np.float)
+        verts = np.empty((nverts, 2), dtype=float)
+        xc = np.empty((ncells), dtype=float)
+        yc = np.empty((ncells), dtype=float)
 
         # read the vertices
         f.readline()
@@ -1905,27 +1899,26 @@ class SpatialReferenceUnstructured(SpatialReference):
 
         Returns
         -------
-        quadmesh : matplotlib.collections.QuadMesh
+        pc : matplotlib.collections.PatchCollection
 
         """
-        from ..plot import plotutil
+        from ..plot import ModelMap
 
-        patch_collection = plotutil.plot_cvfd(
-            self.verts, self.iverts, a=a, ax=ax
-        )
-        return patch_collection
+        pmv = ModelMap(sr=self, ax=ax)
+        pc = pmv.plot_array(a)
+
+        return pc
 
     def get_grid_line_collection(self, **kwargs):
         """
         Get a patch collection of the grid
 
         """
-        from ..plot import plotutil
+        from ..plot import ModelMap
 
-        edgecolor = kwargs.pop("colors")
-        pc = plotutil.cvfd_to_patch_collection(self.verts, self.iverts)
-        pc.set(facecolor="none")
-        pc.set(edgecolor=edgecolor)
+        ax = kwargs.pop("ax", None)
+        pmv = ModelMap(sr=self, ax=ax)
+        pc = pmv.plot_grid(**kwargs)
         return pc
 
     def contour_array(self, ax, a, **kwargs):
@@ -1989,7 +1982,9 @@ class epsgRef:
 
     def __init__(self):
         warnings.warn(
-            "epsgRef has been deprecated.", category=DeprecationWarning
+            "epsgRef has been deprecated and will be removed in version "
+            "3.3.5.",
+            category=DeprecationWarning,
         )
         try:
             from appdirs import user_data_dir
@@ -2072,7 +2067,8 @@ class crs(object):
 
     def __init__(self, prj=None, esri_wkt=None, epsg=None):
         warnings.warn(
-            "crs has been deprecated. Use CRS in shapefile_utils instead.",
+            "crs has been deprecated and will be removed in version 3.3.5. "
+            "Use CRS in shapefile_utils instead.",
             category=DeprecationWarning,
         )
         self.wktstr = None
@@ -2293,7 +2289,8 @@ def getprj(epsg, addlocalreference=True, text="esriwkt"):
 
     """
     warnings.warn(
-        "SpatialReference has been deprecated. Use StructuredGrid " "instead.",
+        "SpatialReference has been deprecated and will be removed in version "
+        "3.3.5. Use StructuredGrid instead.",
         category=DeprecationWarning,
     )
     epsgfile = epsgRef()
@@ -2329,7 +2326,8 @@ def get_spatialreference(epsg, text="esriwkt"):
     from flopy.utils.flopy_io import get_url_text
 
     warnings.warn(
-        "SpatialReference has been deprecated. Use StructuredGrid " "instead.",
+        "SpatialReference has been deprecated and will be removed in version "
+        "3.3.5. Use StructuredGrid instead.",
         category=DeprecationWarning,
     )
 
@@ -2373,7 +2371,8 @@ def getproj4(epsg):
 
     """
     warnings.warn(
-        "SpatialReference has been deprecated. Use StructuredGrid " "instead.",
+        "SpatialReference has been deprecated and will be removed in version "
+        "3.3.5. Use StructuredGrid instead.",
         category=DeprecationWarning,
     )
 

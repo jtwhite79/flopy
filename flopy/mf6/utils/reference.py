@@ -139,35 +139,21 @@ class StructuredSpatialReference(object):
     def __setattr__(self, key, value):
         reset = True
         if key == "delr":
-            super(StructuredSpatialReference, self).__setattr__(
-                "delr", np.atleast_1d(np.array(value))
-            )
+            super().__setattr__("delr", np.atleast_1d(np.array(value)))
         elif key == "delc":
-            super(StructuredSpatialReference, self).__setattr__(
-                "delc", np.atleast_1d(np.array(value))
-            )
+            super().__setattr__("delc", np.atleast_1d(np.array(value)))
         elif key == "xul":
-            super(StructuredSpatialReference, self).__setattr__(
-                "xul", float(value)
-            )
+            super().__setattr__("xul", float(value))
         elif key == "yul":
-            super(StructuredSpatialReference, self).__setattr__(
-                "yul", float(value)
-            )
+            super().__setattr__("yul", float(value))
         elif key == "rotation":
-            super(StructuredSpatialReference, self).__setattr__(
-                "rotation", float(value)
-            )
+            super().__setattr__("rotation", float(value))
         elif key == "lenuni":
-            super(StructuredSpatialReference, self).__setattr__(
-                "lenuni", int(value)
-            )
+            super().__setattr__("lenuni", int(value))
         elif key == "nlay":
-            super(StructuredSpatialReference, self).__setattr__(
-                "nlay", int(value)
-            )
+            super().__setattr__("nlay", int(value))
         else:
-            super(StructuredSpatialReference, self).__setattr__(key, value)
+            super().__setattr__(key, value)
             reset = False
         if reset:
             self._reset()
@@ -206,7 +192,6 @@ class StructuredSpatialReference(object):
     @classmethod
     def from_gridspec(cls, gridspec_file, lenuni=0):
         f = open(gridspec_file, "r")
-        lines = f.readlines()
         raw = f.readline().strip().split()
         nrow = int(raw[0])
         ncol = int(raw[1])
@@ -220,10 +205,10 @@ class StructuredSpatialReference(object):
                 if "*" in r:
                     rraw = r.split("*")
                     for n in range(int(rraw[0])):
-                        delr.append(int(rraw[1]))
+                        delr.append(float(rraw[1]))
                         j += 1
                 else:
-                    delr.append(int(r))
+                    delr.append(float(r))
                     j += 1
         delc = []
         i = 0
@@ -233,10 +218,10 @@ class StructuredSpatialReference(object):
                 if "*" in r:
                     rraw = r.split("*")
                     for n in range(int(rraw[0])):
-                        delc.append(int(rraw[1]))
+                        delc.append(float(rraw[1]))
                         i += 1
                 else:
-                    delc.append(int(r))
+                    delc.append(float(r))
                     i += 1
         f.close()
         return cls(
@@ -688,33 +673,21 @@ class VertexSpatialReference(object):
     def __setattr__(self, key, value):
         reset = True
         if key == "xvdict":
-            super(VertexSpatialReference, self).__setattr__(
-                "xvdict", dict(value)
-            )
+            super().__setattr__("xvdict", dict(value))
         elif key == "yvdict":
-            super(VertexSpatialReference, self).__setattr__(
-                "yvdict", dict(value)
-            )
+            super().__setattr__("yvdict", dict(value))
         elif key == "xyvdict":
-            super(VertexSpatialReference, self).__setattr__("xyvdict", value)
+            super().__setattr__("xyvdict", value)
         elif key == "xadj":
-            super(VertexSpatialReference, self).__setattr__(
-                "xadj", float(value)
-            )
+            super().__setattr__("xadj", float(value))
         elif key == "yadj":
-            super(VertexSpatialReference, self).__setattr__(
-                "yadj", float(value)
-            )
+            super().__setattr__("yadj", float(value))
         elif key == "rotation":
-            super(VertexSpatialReference, self).__setattr__(
-                "rotation", float(value)
-            )
+            super().__setattr__("rotation", float(value))
         elif key == "lenuni":
-            super(VertexSpatialReference, self).__setattr__(
-                "lenuni", int(value)
-            )
+            super().__setattr__("lenuni", int(value))
         else:
-            super(VertexSpatialReference, self).__setattr__(key, value)
+            super().__setattr__(key, value)
             reset = False
         if reset:
             self._reset()

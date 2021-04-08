@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 from .grid import Grid, CachedData
 
@@ -27,10 +28,10 @@ class UnstructuredGrid(Grid):
     ncpl : ndarray
         one dimensional array of size nlay with the number of cells in each
         layer.  This can also be passed in as a tuple or list as long as it
-        can be set using ncpl = np.array(ncpl, dtype=np.int).  The sum of ncpl
+        can be set using ncpl = np.array(ncpl, dtype=int).  The sum of ncpl
         must be equal to the number of cells in the grid.  ncpl is optional
         and if it is not passed in, then it is is set using
-        ncpl = np.array([len(iverts)], dtype=np.int), which means that all
+        ncpl = np.array([len(iverts)], dtype=int), which means that all
         cells in the grid are contained in a single plottable layer.
         If the model grid defined in verts and iverts applies for all model
         layers, then the length of iverts can be equal to ncpl[0] and there
@@ -58,15 +59,17 @@ class UnstructuredGrid(Grid):
     This class handles spatial representation of unstructured grids.  It is
     based on the concept of being able to support multiple model layers that
     may have a different number of cells in each layer.  The array ncpl is of
-    size nlay and and its sum must equal nodes.  If the grid_varies_by_layer
-    flag is set to true, then the iverts array must be of size ncpl[0] and all
-    values in the ncpl array must be equal to nodes / nlay.  The xcenters and
-    ycenters arrays must also be of size ncpl[0].  This makes it
-    possible to efficiently store spatial grid information for multiple layers.
+    size nlay and and its sum must equal nodes.  If the length of iverts is
+    equal to ncpl[0] and the number of cells per layer is the same for each
+    layer, then it is assumed that the grid does not vary by layer.  In this
+    case, the xcenters and ycenters arrays must also be of size ncpl[0].
+    This makes it possible to efficiently store spatial grid information
+    for multiple layers.
 
     If the spatial grid is different for each model layer, then the
-    grid_varies_by_layer flag should be false, and iverts must be of size
-    nodes. The arrays for xcenters and ycenters must also be of size nodes.
+    grid_varies_by_layer flag will automatically be set to false, and iverts
+    must be of size nodes. The arrays for xcenters and ycenters must also
+    be of size nodes.
 
     """
 
@@ -88,7 +91,7 @@ class UnstructuredGrid(Grid):
         yoff=0.0,
         angrot=0.0,
     ):
-        super(UnstructuredGrid, self).__init__(
+        super().__init__(
             "unstructured",
             top,
             botm,
@@ -138,9 +141,9 @@ class UnstructuredGrid(Grid):
 
     def set_ncpl(self, ncpl):
         if isinstance(ncpl, int):
-            ncpl = np.array([ncpl], dtype=np.int)
+            ncpl = np.array([ncpl], dtype=int)
         if isinstance(ncpl, (list, tuple, np.ndarray)):
-            ncpl = np.array(ncpl, dtype=np.int)
+            ncpl = np.array(ncpl, dtype=int)
         else:
             raise TypeError("ncpl must be a list, tuple or ndarray")
         assert ncpl.ndim == 1, "ncpl must be 1d"
@@ -163,10 +166,7 @@ class UnstructuredGrid(Grid):
 
     @property
     def is_complete(self):
-        if (
-            self.is_valid is not None
-            and super(UnstructuredGrid, self).is_complete
-        ):
+        if self.is_valid is not None and super().is_complete:
             return True
         return False
 
@@ -299,8 +299,148 @@ class UnstructuredGrid(Grid):
         else:
             return self._cache_dict[cache_index].data_nocopy
 
+    def cross_section_lay_ncpl_ncb(self, ncb):
+        """
+        Get PlotCrossSection compatible layers, ncpl, and ncb
+        variables
+
+        Parameters
+        ----------
+        ncb : int
+            number of confining beds
+
+        Returns
+        -------
+            tuple : (int, int, int) layers, ncpl, ncb
+        """
+        return 1, self.nnodes, 0
+
+    def cross_section_nodeskip(self, nlay, xypts):
+        """
+        Get a nodeskip list for PlotCrossSection. This is a correction
+        for UnstructuredGridPlotting
+
+        Parameters
+        ----------
+        nlay : int
+            nlay is nlay + ncb
+        xypts : dict
+            dictionary of node number and xyvertices of a cross-section
+
+        Returns
+        -------
+            list : n-dimensional list of nodes to not plot for each layer
+        """
+        strt = 0
+        end = 0
+        nodeskip = []
+        for ncpl in self.ncpl:
+            end += ncpl
+            layskip = []
+            for nn, verts in xypts.items():
+                if strt <= nn < end:
+                    continue
+                else:
+                    layskip.append(nn)
+
+            strt += ncpl
+            nodeskip.append(layskip)
+
+        return nodeskip
+
+    def cross_section_adjust_indicies(self, k, cbcnt):
+        """
+        Method to get adjusted indicies by layer and confining bed
+        for PlotCrossSection plotting
+
+        Parameters
+        ----------
+        k : int
+            zero based model layer
+        cbcnt : int
+            confining bed counter
+
+        Returns
+        -------
+            tuple: (int, int, int) (adjusted layer, nodeskip layer, node
+            adjustment value based on number of confining beds and the layer)
+        """
+        return 1, k + 1, 0
+
+    def cross_section_set_contour_arrays(
+        self, plotarray, xcenters, head, elev, projpts
+    ):
+        """
+        Method to set countour array centers for rare instances where
+        matplotlib contouring is prefered over trimesh plotting
+
+        Parameters
+        ----------
+        plotarray : np.ndarray
+            array of data for contouring
+        xcenters : np.ndarray
+            xcenters array
+        head : np.ndarray
+            head array to adjust cell centers location
+        elev : np.ndarray
+            cell elevation array
+        projpts : dict
+            dictionary of projected cross sectional vertices
+
+        Returns
+        -------
+            tuple: (np.ndarray, np.ndarray, np.ndarray, bool)
+            plotarray, xcenter array, ycenter array, and a boolean flag
+            for contouring
+        """
+        return plotarray, xcenters, None, False
+
+    @property
+    def map_polygons(self):
+        """
+        Property to get Matplotlib polygon objects for the modelgrid
+
+        Returns
+        -------
+            list or dict of matplotlib.collections.Polygon
+        """
+        try:
+            from matplotlib.patches import Polygon
+        except ImportError:
+            raise ImportError("matplotlib required to use this method")
+
+        cache_index = "xyzgrid"
+        if (
+            cache_index not in self._cache_dict
+            or self._cache_dict[cache_index].out_of_date
+        ):
+            self.xyzvertices
+            self._polygons = None
+
+        if self._polygons is None:
+            if self.grid_varies_by_layer:
+                self._polygons = {}
+                ilay = 0
+                lay_break = np.cumsum(self.ncpl)
+                for nn in range(self.nnodes):
+                    if nn in lay_break:
+                        ilay += 1
+
+                    if ilay not in self._polygons:
+                        self._polygons[ilay] = []
+
+                    p = Polygon(self.get_cell_vertices(nn), closed=True)
+                    self._polygons[ilay].append(p)
+            else:
+                self._polygons = [
+                    Polygon(self.get_cell_vertices(nn), closed=True)
+                    for nn in range(self.ncpl[0])
+                ]
+
+        return copy.copy(self._polygons)
+
     def intersect(self, x, y, local=False, forgive=False):
-        x, y = super(UnstructuredGrid, self).intersect(x, y, local, forgive)
+        x, y = super().intersect(x, y, local, forgive)
         raise Exception("Not implemented yet")
 
     def get_cell_vertices(self, cellid):
@@ -497,9 +637,9 @@ class UnstructuredGrid(Grid):
         ncells, nverts = ll[0:2]
         ncells = int(ncells)
         nverts = int(nverts)
-        verts = np.empty((nverts, 3), dtype=np.float)
-        xc = np.empty((ncells), dtype=np.float)
-        yc = np.empty((ncells), dtype=np.float)
+        verts = np.empty((nverts, 3), dtype=float)
+        xc = np.empty((ncells), dtype=float)
+        yc = np.empty((ncells), dtype=float)
 
         # read the vertices
         f.readline()
