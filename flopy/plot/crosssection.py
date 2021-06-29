@@ -15,7 +15,7 @@ import warnings
 warnings.simplefilter("always", PendingDeprecationWarning)
 
 
-class PlotCrossSection(object):
+class PlotCrossSection:
     """
     Class to create a cross sectional plot of a model.
 
@@ -631,7 +631,7 @@ class PlotCrossSection(object):
             else:
                 ibound = self.mg.idomain
 
-        plotarray = np.zeros(ibound.shape, dtype=np.int)
+        plotarray = np.zeros(ibound.shape, dtype=int)
         idx1 = ibound == 0
         plotarray[idx1] = 1
         plotarray = np.ma.masked_equal(plotarray, 0)
@@ -685,7 +685,7 @@ class PlotCrossSection(object):
 
             ibound = self.mg.idomain
 
-        plotarray = np.zeros(ibound.shape, dtype=np.int)
+        plotarray = np.zeros(ibound.shape, dtype=int)
         idx1 = ibound == 0
         idx2 = ibound < 0
         plotarray[idx1] = 1
@@ -823,11 +823,11 @@ class PlotCrossSection(object):
                     idx = mflist["node"]
 
         if len(self.mg.shape) != 3:
-            plotarray = np.zeros((self._nlay, self._ncpl), dtype=np.int)
+            plotarray = np.zeros((self._nlay, self._ncpl), dtype=int)
             plotarray[tuple(idx)] = 1
         else:
             plotarray = np.zeros(
-                (self.mg.nlay, self.mg.nrow, self.mg.ncol), dtype=np.int
+                (self.mg.nlay, self.mg.nrow, self.mg.ncol), dtype=int
             )
             plotarray[idx[0], idx[1], idx[2]] = 1
 
@@ -1155,7 +1155,7 @@ class PlotCrossSection(object):
             # thickness by setting laytyp to zeros
             if head is None or laytyp is None:
                 head = np.zeros(botm.shape, np.float32)
-                laytyp = np.zeros((nlay,), dtype=np.int)
+                laytyp = np.zeros((nlay,), dtype=int)
                 head[0, :, :] = top
                 if nlay > 1:
                     head[1:, :, :] = botm[:-1, :, :]
@@ -1170,7 +1170,7 @@ class PlotCrossSection(object):
             )
 
             if qz is None:
-                qz = np.zeros(qx.shape, dtype=np.float)
+                qz = np.zeros(qx.shape, dtype=float)
 
             qx = qx.ravel()
             qy = qy.ravel()
@@ -1258,6 +1258,7 @@ class PlotCrossSection(object):
             self.xvertices,
             self.yvertices,
             self.direction,
+            self._ncpl,
             method=method,
         )
         plines = plotutil.reproject_modpath_to_crosssection(
@@ -1266,6 +1267,7 @@ class PlotCrossSection(object):
             self.xypts,
             self.direction,
             self.mg,
+            self._ncpl,
             self.geographic_coords,
         )
 
@@ -1732,7 +1734,7 @@ class DeprecatedCrossSection(PlotCrossSection):
         )
 
 
-class ModelCrossSection(object):
+class ModelCrossSection:
     """
     DEPRECATED. Class to create a cross section of the model.
 

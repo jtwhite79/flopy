@@ -126,6 +126,12 @@ class VertexGrid(Grid):
         return self.nlay, self.ncpl
 
     @property
+    def top_botm(self):
+        new_top = np.expand_dims(self._top, 0)
+        # new_botm = np.expand_dims(self._botm, 0)
+        return np.concatenate((new_top, self._botm), axis=0)
+
+    @property
     def extent(self):
         self._copy_cache = False
         xvertices = np.hstack(self.xvertices)
@@ -197,6 +203,34 @@ class VertexGrid(Grid):
             return self._cache_dict[cache_index].data
         else:
             return self._cache_dict[cache_index].data_nocopy
+
+    @property
+    def map_polygons(self):
+        """
+        Get a list of matplotlib Polygon patches for plotting
+
+        Returns
+        -------
+            list of Polygon objects
+        """
+        try:
+            import matplotlib.path as mpath
+        except ImportError:
+            raise ImportError("matplotlib required to use this method")
+        cache_index = "xyzgrid"
+        if (
+            cache_index not in self._cache_dict
+            or self._cache_dict[cache_index].out_of_date
+        ):
+            self.xyzvertices
+            self._polygons = None
+        if self._polygons is None:
+            self._polygons = [
+                mpath.Path(self.get_cell_vertices(nn))
+                for nn in range(self.ncpl)
+            ]
+
+        return copy.copy(self._polygons)
 
     def intersect(self, x, y, local=False, forgive=False):
         """

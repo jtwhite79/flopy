@@ -19,7 +19,7 @@ from ..utils.flopy_io import line_parse
 from ..datbase import DataType, DataInterface
 
 
-class ArrayFormat(object):
+class ArrayFormat:
     """
     ArrayFormat class for handling various output format types for both
     MODFLOW and flopy
@@ -695,17 +695,6 @@ class Util3d(DataInterface):
             "Deprecation warning: to_shapefile() is deprecated. use .export()",
             DeprecationWarning,
         )
-
-        # from flopy.utils.flopy_io import write_grid_shapefile, shape_attr_name
-        #
-        # array_dict = {}
-        # for ilay in range(self._model.nlay):
-        #     u2d = self[ilay]
-        #     name = '{}_{:03d}'.format(shape_attr_name(u2d.name), ilay + 1)
-        #     array_dict[name] = u2d.array
-        # write_grid_shapefile(filename, self._model.dis.sr,
-        #                      array_dict)
-
         self.export(filename)
 
     def plot(
@@ -1551,15 +1540,6 @@ class Transient2d(DataInterface):
             "Deprecation warning: to_shapefile() is deprecated. use .export()",
             DeprecationWarning,
         )
-
-        # from flopy.utils.flopy_io import write_grid_shapefile, shape_attr_name
-        #
-        # array_dict = {}
-        # for kper in range(self._model.nper):
-        #     u2d = self[kper]
-        #     name = '{}_{:03d}'.format(shape_attr_name(u2d.name), kper + 1)
-        #     array_dict[name] = u2d.array
-        # write_grid_shapefile(filename, self._model.dis.sr, array_dict)
         self.export(filename)
 
     def plot(
@@ -1946,8 +1926,8 @@ class Util2d(DataInterface):
             if np.dtype(int).itemsize != 4:
                 # show warning for platforms where int is not 4-bytes
                 warn(
-                    "Util2d: setting integer dtype from {0} to int32".format(
-                        dtype
+                    "Util2d: setting integer dtype from {} to int32 for array {}".format(
+                        dtype, name
                     )
                 )
             dtype = np.int32
@@ -2148,10 +2128,6 @@ class Util2d(DataInterface):
             "Deprecation warning: to_shapefile() is deprecated. use .export()",
             DeprecationWarning,
         )
-        # from flopy.utils.flopy_io import write_grid_shapefile, shape_attr_name
-        # name = shape_attr_name(self._name, keep_layer=True)
-        # write_grid_shapefile(filename, self._model.dis.sr, {name:
-        # self.array})
         self.export(filename)
 
     def set_fmtin(self, fmtin):

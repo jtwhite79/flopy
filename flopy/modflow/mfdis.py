@@ -15,7 +15,7 @@ import numpy as np
 
 from ..pakbase import Package
 from ..utils import Util2d, Util3d
-from ..utils.reference import SpatialReference, TemporalReference
+from ..utils.reference import TemporalReference
 from ..utils.flopy_io import line_parse
 
 ITMUNI = {"u": 0, "s": 1, "m": 2, "h": 3, "d": 4, "y": 5}
@@ -280,21 +280,6 @@ class ModflowDis(Package):
             yll = mg._yul_to_yll(yul)
         mg.set_coord_info(xoff=xll, yoff=yll, angrot=rotation, proj4=proj4_str)
 
-        xll = mg.xoffset
-        yll = mg.yoffset
-        rotation = mg.angrot
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=DeprecationWarning)
-            self._sr = SpatialReference(
-                self.delr,
-                self.delc,
-                self.lenuni,
-                xll=xll,
-                yll=yll,
-                rotation=rotation or 0.0,
-                proj4_str=proj4_str,
-            )
-
         self.tr = TemporalReference(
             itmuni=self.itmuni, start_datetime=start_datetime
         )
@@ -305,10 +290,23 @@ class ModflowDis(Package):
 
     @property
     def sr(self):
+        from ..utils.reference import SpatialReference
+
         warnings.warn(
             "SpatialReference has been deprecated. Use Grid instead.",
             DeprecationWarning,
         )
+        if not hasattr(self, "_sr"):
+            mg = self.parent.modelgrid
+            self._sr = SpatialReference(
+                self.delr,
+                self.delc,
+                self.lenuni,
+                xll=mg.xoffset,
+                yll=mg.yoffset,
+                rotation=mg.angrot or 0.0,
+                proj4_str=mg.proj4,
+            )
         return self._sr
 
     @sr.setter
@@ -324,7 +322,7 @@ class ModflowDis(Package):
         Check layer thickness.
 
         """
-        return (self.thickness > 0).all()
+        return (self.parent.modelgrid.thick > 0).all()
 
     def get_totim(self):
         """
@@ -471,7 +469,7 @@ class ModflowDis(Package):
         """
         vol = np.empty((self.nlay, self.nrow, self.ncol))
         for l in range(self.nlay):
-            vol[l, :, :] = self.thickness.array[l]
+            vol[l, :, :] = self.parent.modelgrid.thick[l]
         for r in range(self.nrow):
             vol[:, r, :] *= self.delc[r]
         for c in range(self.ncol):
@@ -636,6 +634,11 @@ class ModflowDis(Package):
         thickness : util3d array of floats (nlay, nrow, ncol)
 
         """
+        warnings.warn(
+            "ModflowDis.thickness will be deprecated and removed "
+            "in version 3.3.5.  Use grid.thick().",
+            PendingDeprecationWarning,
+        )
         # return self.__thickness
         thk = []
         thk.append(self.top - self.botm[0])
@@ -675,9 +678,6 @@ class ModflowDis(Package):
         f_dis = open(self.fn_path, "w")
         # Item 0: heading
         f_dis.write("{0:s}\n".format(self.heading))
-        # f_dis.write('#{0:s}'.format(str(self.sr)))
-        # f_dis.write(" ,{0:s}:{1:s}\n".format("start_datetime",
-        #                                    self.start_datetime))
         # Item 1: NLAY, NROW, NCOL, NPER, ITMUNI, LENUNI
         f_dis.write(
             "{0:10d}{1:10d}{2:10d}{3:10d}{4:10d}{5:10d}\n".format(
@@ -750,7 +750,7 @@ class ModflowDis(Package):
         active = chk.get_active(include_cbd=True)
 
         # Use either a numpy array or masked array
-        thickness = self.thickness.array
+        thickness = self.parent.modelgrid.thick
         non_finite = ~(np.isfinite(thickness))
         if non_finite.any():
             thickness[non_finite] = 0

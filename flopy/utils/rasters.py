@@ -18,7 +18,7 @@ except ImportError:
     scipy = None
 
 
-class Raster(object):
+class Raster:
     """
     The Raster object is used for cropping, sampling raster values,
     and re-sampling raster values to grids, and provides methods to
@@ -57,7 +57,7 @@ class Raster(object):
     FLOAT64 = (np.float64,)
     INT8 = (np.int8,)
     INT16 = (np.int16,)
-    INT32 = (int, np.int, np.int32, np.uint32)
+    INT32 = (int, np.int32, np.uint32)
     INT64 = (np.int64,)
 
     def __init__(

@@ -1,13 +1,14 @@
 import os
 import copy
 import numpy as np
+import warnings
 from .binaryfile import CellBudgetFile
 from itertools import groupby
 from collections import OrderedDict
 from ..utils.utils_def import totim_to_datetime
 
 
-class ZoneBudget(object):
+class ZoneBudget:
     """
     ZoneBudget class
 
@@ -82,16 +83,14 @@ class ZoneBudget(object):
             )
 
         self.dis = None
-        self.sr = None
         if "model" in kwargs.keys():
             self.model = kwargs.pop("model")
-            self.sr = self.model.sr
             self.dis = self.model.dis
         if "dis" in kwargs.keys():
             self.dis = kwargs.pop("dis")
-            self.sr = self.dis.parent.sr
         if "sr" in kwargs.keys():
-            self.sr = kwargs.pop("sr")
+            kwargs.pop("sr")
+            warnings.warn("ignoring 'sr' parameter")
         if len(kwargs.keys()) > 0:
             args = ",".join(kwargs.keys())
             raise Exception("LayerFile error: unrecognized kwargs: " + args)
@@ -1830,7 +1829,7 @@ def get_totim_modflow6(tdis):
     return totim
 
 
-class ZBNetOutput(object):
+class ZBNetOutput:
     """
     Class that holds zonebudget netcdf output and allows export utilities
     to recognize the output data type.
@@ -1859,7 +1858,7 @@ class ZBNetOutput(object):
         self.flux = flux
 
 
-class ZoneBudgetOutput(object):
+class ZoneBudgetOutput:
     """
     Class method to process zonebudget output into volumetric budgets
 

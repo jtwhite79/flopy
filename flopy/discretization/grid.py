@@ -4,7 +4,7 @@ import warnings
 from ..utils import geometry
 
 
-class CachedData(object):
+class CachedData:
     def __init__(self, data):
         self._data = data
         self.out_of_date = False
@@ -22,7 +22,7 @@ class CachedData(object):
         self.out_of_date = False
 
 
-class Grid(object):
+class Grid:
     """
     Base class for a structured or unstructured model grid
 
@@ -38,16 +38,19 @@ class Grid(object):
         ibound/idomain value for each cell
     lenuni : ndarray(int)
         model length units
-    origin_loc : str
-        Corner of the model grid that is the model origin
-        'ul' (upper left corner) or 'll' (lower left corner)
-    origin_x : float
+    espg : str, int
+        optional espg projection code
+    proj4 : str
+        optional proj4 projection string code
+    prj : str
+        optional projection file name path
+    xoff : float
         x coordinate of the origin point (lower left corner of model grid)
         in the spatial reference coordinate system
-    origin_y : float
+    yoff : float
         y coordinate of the origin point (lower left corner of model grid)
         in the spatial reference coordinate system
-    rotation : float
+    angrot : float
         rotation angle of model grid, as it is rotated around the origin point
 
     Attributes
@@ -66,14 +69,16 @@ class Grid(object):
         spatial reference locates the grid in a coordinate system
     lenuni : int
         modflow lenuni parameter
-    origin_x : float
+    xoffset : float
         x coordinate of the origin point in the spatial reference coordinate
         system
-    origin_y : float
+    yoffset : float
         y coordinate of the origin point in the spatial reference coordinate
         system
-    rotation : float
+    angrot : float
         rotation angle of model grid, as it is rotated around the origin point
+    angrot_radians : float
+        rotation angle of model grid, in radians
     xgrid : ndarray
         returns numpy meshgrid of x edges in reference frame defined by
         point_type
@@ -275,8 +280,50 @@ class Grid(object):
 
     @property
     def top_botm(self):
-        new_top = np.expand_dims(self._top, 0)
-        return np.concatenate((new_top, self._botm), axis=0)
+        raise NotImplementedError("must define top_botm in child class")
+
+    @property
+    def thick(self):
+        """
+        Get the cell thickness for a structured, vertex, or unstructured grid.
+
+        Returns
+        -------
+            thick : calculated thickness
+        """
+        return -np.diff(self.top_botm, axis=0).reshape(self._botm.shape)
+
+    def saturated_thick(self, array, mask=None):
+        """
+        Get the saturated thickness for a structured, vertex, or unstructured
+        grid. If the optional array is passed then thickness is returned
+        relative to array values (saturated thickness). Returned values
+        ranges from zero to cell thickness if optional array is passed.
+
+        Parameters
+        ----------
+        array : ndarray
+            array of elevations that will be used to adjust the cell thickness
+        mask: float, list, tuple, ndarray
+            array values to replace with a nan value.
+
+        Returns
+        -------
+            thick : calculated saturated thickness
+        """
+        thick = self.thick
+        top = self.top_botm[:-1].reshape(thick.shape)
+        bot = self.top_botm[1:].reshape(thick.shape)
+        idx = np.where((array < top) & (array > bot))
+        thick[idx] = array[idx] - bot[idx]
+        idx = np.where(array <= bot)
+        thick[idx] = 0.0
+        if mask is not None:
+            if isinstance(mask, (float, int)):
+                mask = [float(mask)]
+            for mask_value in mask:
+                thick[np.where(array == mask_value)] = np.nan
+        return thick
 
     @property
     def units(self):
@@ -493,32 +540,7 @@ class Grid(object):
 
     @property
     def map_polygons(self):
-        """
-        Get a list of matplotlib Polygon patches for plotting
-
-        Returns
-        -------
-            list of Polygon objects
-        """
-        try:
-            from matplotlib.patches import Polygon
-        except ImportError:
-            raise ImportError("matplotlib required to use this method")
-        cache_index = "xyzgrid"
-        if (
-            cache_index not in self._cache_dict
-            or self._cache_dict[cache_index].out_of_date
-        ):
-            self.xyzvertices
-            self._polygons = None
-
-        if self._polygons is None:
-            self._polygons = [
-                Polygon(self.get_cell_vertices(nn), closed=True)
-                for nn in range(self.ncpl)
-            ]
-
-        return copy.copy(self._polygons)
+        raise NotImplementedError("must define map_polygons in child class")
 
     def get_plottable_layer_array(self, plotarray, layer):
         raise NotImplementedError(
@@ -558,7 +580,7 @@ class Grid(object):
             x = np.array(x)
             y = np.array(y)
         if not np.isscalar(x):
-            x, y = x.copy(), y.copy()
+            x, y = x.astype(float, copy=True), y.astype(float, copy=True)
 
         x += self._xoff
         y += self._yoff

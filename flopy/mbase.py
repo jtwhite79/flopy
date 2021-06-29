@@ -31,7 +31,7 @@ iprn = (
 )  # Printout flag. If >= 0 then array values read are printed in listing file.
 
 
-class FileDataEntry(object):
+class FileDataEntry:
     def __init__(self, fname, unit, binflag=False, output=False, package=None):
         self.fname = fname
         self.unit = unit
@@ -40,7 +40,7 @@ class FileDataEntry(object):
         self.package = package
 
 
-class FileData(object):
+class FileData:
     def __init__(self):
         self.file_data = []
         return
@@ -59,7 +59,7 @@ class FileData(object):
         return
 
 
-class ModelInterface(object):
+class ModelInterface:
     def __init__(self):
         self._mg_resync = True
         self._modelgrid = None
@@ -1077,7 +1077,7 @@ class BaseModel(ModelInterface):
         #     if ptype in pak.name:
         #         print("BaseModel.add_existing_package() warning: " +\
         #               "replacing existing package {0}".format(ptype))
-        class Obj(object):
+        class Obj:
             pass
 
         fake_package = Obj()
@@ -1315,8 +1315,7 @@ class BaseModel(ModelInterface):
             self._set_name(value)
         elif key == "model_ws":
             self.change_model_ws(value)
-        elif key == "sr":
-            assert isinstance(value, utils.reference.SpatialReference)
+        elif key == "sr" and value.__class__.__name__ == "SpatialReference":
             warnings.warn(
                 "SpatialReference has been deprecated.",
                 category=DeprecationWarning,

@@ -167,7 +167,7 @@ def repair_array_asymmetry(isym, a, atol=0):
     return a
 
 
-class Gridgen(object):
+class Gridgen:
     """
     Class to work with the gridgen program to create layered quadtree grids.
 
@@ -1390,9 +1390,10 @@ class Gridgen(object):
     @staticmethod
     def gridarray_to_flopyusg_gridarray(nodelay, a):
         nlay = nodelay.shape[0]
-        istart = 0
+        istop = 0
         layerlist = []
         for k in range(nlay):
+            istart = istop
             istop = istart + nodelay[k]
             ak = a[istart:istop]
             if ak.min() == ak.max():
