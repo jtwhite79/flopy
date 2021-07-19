@@ -5,12 +5,17 @@ the ModflowDisU class as `flopy.modflow.ModflowDisU`.
 """
 
 import sys
+import warnings
 import numpy as np
 from ..pakbase import Package
 from ..utils import Util2d, Util3d, read1d
+from ..utils.reference import TemporalReference
+from ..discretization.unstructuredgrid import UnstructuredGrid
 
 ITMUNI = {"u": 0, "s": 1, "m": 2, "h": 3, "d": 4, "y": 5}
 LENUNI = {"u": 0, "f": 1, "m": 2, "c": 3}
+
+warnings.simplefilter("always", PendingDeprecationWarning)
 
 
 class ModflowDisU(Package):
@@ -453,10 +458,28 @@ class ModflowDisU(Package):
             5: "years",
         }
 
+        if start_datetime is None:
+            start_datetime = model._start_datetime
+
+        if model.modelgrid is None:
+            model.modelgrid = UnstructuredGrid(
+                ncpl=self.nodelay.array,
+                top=self.top.array,
+                botm=self.bot.array,
+                lenuni=self.lenuni,
+            )
+
+        self.tr = TemporalReference(
+            itmuni=self.itmuni, start_datetime=start_datetime
+        )
+
         self.start_datetime = start_datetime
 
         # calculate layer thicknesses
         self.__calculate_thickness()
+
+        # get neighboring nodes
+        self._get_neighboring_nodes()
 
         # Add package and return
         self.parent.add_package(self)
@@ -471,21 +494,30 @@ class ModflowDisU(Package):
         for k in range(self.nlay):
             thk.append(self.top[k] - self.bot[k])
         self.__thickness = Util3d(
-            self.parent, (nlay, nrow, ncol), np.float32, thk, name="thickness"
+            self.parent,
+            (nlay, nrow, ncol),
+            np.float32,
+            thk,
+            name="thickness",
         )
         return
 
     @property
     def thickness(self):
         """
-        Get a Util2d array of cell thicknesses.
+        Return cell thicknesses.
 
         Returns
         -------
-        thickness : util2d array of floats (nodes,)
+        thickness : array of floats (nodes,)
 
         """
-        return self.__thickness
+        warnings.warn(
+            "ModflowDisU.thickness will be deprecated and removed "
+            "in version 3.3.5.  Use grid.thick().",
+            PendingDeprecationWarning,
+        )
+        return self.__thickness.array
 
     def checklayerthickness(self):
         """
@@ -528,7 +560,7 @@ class ModflowDisU(Package):
         return self.nodes / self.nlay
 
     @classmethod
-    def load(cls, f, model, ext_unit_dict=None, check=False):
+    def load(cls, f, model, ext_unit_dict=None, check=True):
         """
         Load an existing package.
 
@@ -924,3 +956,23 @@ class ModflowDisU(Package):
     @staticmethod
     def _defaultunit():
         return 11
+
+    def _get_neighboring_nodes(self):
+        """
+        For each node, get node numbers for all neighbors.
+
+        Returns
+        -------
+        Jagged list of numpy arrays for each node.
+        Each array contains base-1 neighboring node indices.
+        """
+        ja = self.ja.array
+        iac_sum = np.cumsum(self.iac.array)
+        ja_slices = np.asarray(
+            [
+                np.s_[iac_sum[i - 1] + 1 : x] if i > 0 else np.s_[1:x]
+                for i, x in enumerate(iac_sum)
+            ]
+        )  # note: this removes the diagonal - neighbors only
+        self._neighboring_nodes = [ja[sl] for sl in ja_slices]
+        return

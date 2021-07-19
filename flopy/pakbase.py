@@ -112,12 +112,16 @@ class PackageInterface:
         )
 
         # check vkcb if there are any quasi-3D layers
-        if self.parent.dis.laycbd.sum() > 0:
+        if "DIS" in self.parent.get_package_list():
+            dis = self.parent.dis
+        else:
+            dis = self.parent.disu
+        if dis.laycbd.sum() > 0:
             # pad non-quasi-3D layers in vkcb array with ones so
             # they won't fail checker
             vkcb = self.vkcb.array.copy()
             for l in range(self.vkcb.shape[0]):
-                if self.parent.dis.laycbd[l] == 0:
+                if dis.laycbd[l] == 0:
                     # assign 1 instead of zero as default value that
                     # won't violate checker
                     # (allows for same structure as other checks)
@@ -203,11 +207,21 @@ class PackageInterface:
             if kp in self.__dict__:
                 kparams[kp] = name
         if "hk" in self.__dict__:
-            hk = self.hk.array.copy()
+            if self.hk.shape[1] == None:
+                hk = np.asarray(
+                    [a.array.flatten() for a in self.hk], dtype=object
+                )
+            else:
+                hk = self.hk.array.copy()
         else:
             hk = self.k.array.copy()
         if "vka" in self.__dict__ and self.layvka.sum() > 0:
-            vka = self.vka.array
+            if self.vka.shape[1] == None:
+                vka = np.asarray(
+                    [a.array.flatten() for a in self.vka], dtype=object
+                )
+            else:
+                vka = self.vka.array
             vka_param = kparams.pop("vka")
         elif "k33" in self.__dict__:
             vka = self.k33.array
@@ -351,7 +365,6 @@ class PackageInterface:
                     + "storage coefficients"
                 )
                 chk._add_to_summary(type="Warning", desc=desc)
-
             chk.values(
                 sarrays["ss"],
                 active & (sarrays["ss"] < 0),
@@ -376,8 +389,25 @@ class PackageInterface:
                         for l in self.laytyp
                     ]
                 )
-                sarrays["sy"] = sarrays["sy"][inds, :, :]
-                active = active[inds, :, :]
+                if self.ss.shape[1] is None:
+                    # unstructured; build flat nodal property array slicers (by layer)
+                    node_to = np.cumsum([s.array.size for s in self.ss])
+                    node_from = np.array([0] + list(node_to[:-1]))
+                    node_k_slices = np.array(
+                        [
+                            np.s_[n_from:n_to]
+                            for n_from, n_to in zip(node_from, node_to)
+                        ]
+                    )[inds]
+                    sarrays["sy"] = np.asarray(
+                        [sarrays["sy"][sl] for sl in node_k_slices]
+                    ).flatten()
+                    active = np.asarray(
+                        [active[sl] for sl in node_k_slices]
+                    ).flatten()
+                else:
+                    sarrays["sy"] = sarrays["sy"][inds, :, :]
+                    active = active[inds, :, :]
             else:
                 iconvert = self.iconvert.array
                 for ishape in np.ndindex(active.shape):
