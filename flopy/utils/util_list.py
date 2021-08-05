@@ -1086,6 +1086,9 @@ class MfList(DataInterface, DataListInterface):
                 kper = self.__find_last_kper(kper)
 
         sarr = self.data[kper]
+        #is this is a file, we need to load it now...
+        if isinstance(sarr, str):
+            sarr = self.__fromfile(sarr)
 
         if np.isscalar(sarr):
             # if there are no entries for this kper
