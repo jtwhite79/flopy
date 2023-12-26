@@ -1,5 +1,4 @@
 import numpy as np
-import warnings
 
 
 def get_transmissivities(
@@ -124,7 +123,7 @@ def get_transmissivities(
     return T
 
 
-def get_water_table(heads, nodata, per_idx=None):
+def get_water_table(heads, hdry=-1e30, hnoflo=1e30, masked_values=None):
     """
     Get a 2D array representing the water table elevation for each
     stress period in heads array.
@@ -133,11 +132,16 @@ def get_water_table(heads, nodata, per_idx=None):
     ----------
     heads : 3 or 4-D np.ndarray
         Heads array.
-    nodata : real
-        HDRY value indicating dry cells.
-    per_idx : int or sequence of ints
-        stress periods to return. If None,
-        returns all stress periods (default is None).
+    hdry : real
+        The head that is assigned to cells that are converted to dry
+        during a simulation. By default, -1e30.
+    hnoflo : real
+        The value of head assigned to all inactive (no flow) cells
+        throughout the simulation, including vertical pass-through cells in
+        MODFLOW 6. By default, 1e30.
+    masked_values : list
+        List of any values (in addition to hdry and hnoflo) that should
+        be masked in the water table calculation.
 
     Returns
     -------
@@ -146,93 +150,20 @@ def get_water_table(heads, nodata, per_idx=None):
 
     """
     heads = np.array(heads, ndmin=4)
-    nper, nlay, nrow, ncol = heads.shape
-    if per_idx is None:
-        per_idx = list(range(nper))
-    elif np.isscalar(per_idx):
-        per_idx = [per_idx]
-    wt = []
-    for per in per_idx:
-        wt_per = []
-        for i in range(nrow):
-            for j in range(ncol):
-                for k in range(nlay):
-                    if heads[per, k, i, j] != nodata:
-                        wt_per.append(heads[per, k, i, j])
-                        break
-                    elif k == nlay - 1:
-                        wt_per.append(nodata)
-        assert len(wt_per) == nrow * ncol
-        wt.append(np.reshape(wt_per, (nrow, ncol)))
-    return np.squeeze(wt)
-
-
-def get_saturated_thickness(heads, m, nodata, per_idx=None):
-    """
-    Calculates the saturated thickness for each cell from the heads
-    array for each stress period.
-
-    Parameters
-    ----------
-    heads : 3 or 4-D np.ndarray
-        Heads array.
-    m : flopy.modflow.Modflow object
-        Must have a flopy.modflow.ModflowDis object attached.
-    nodata : float, list
-        HDRY value indicating dry cells and/or HNOFLO values.
-    per_idx : int or sequence of ints
-        stress periods to return. If None,
-        returns all stress periods (default).
-
-    Returns
-    -------
-    sat_thickness : 3 or 4-D np.ndarray
-        Array of saturated thickness
-    """
-    warnings.warn(
-        "postprocessing.get_saturated_thickness will be deprecated and "
-        "removed in version 3.3.5.  Use grid.saturated_thick(heads).",
-        PendingDeprecationWarning,
-    )
-
-    if not isinstance(nodata, list):
-        nodata = [nodata]
-    heads = np.array(heads, ndmin=4)
-    for mv in nodata:
-        heads[heads == mv] = np.nan
-
-    top = m.dis.top.array
-    botm = m.dis.botm.array
-    top.shape = (1,) + botm.shape[1:]
-    top = np.concatenate((top, botm[0:-1]), axis=0)
-    thickness = m.modelgrid.thick
-    nper, nlay, nrow, ncol = heads.shape
-    if per_idx is None:
-        per_idx = list(range(nper))
-    elif np.isscalar(per_idx):
-        per_idx = [per_idx]
-
-    # get confined or unconfined/convertible info
-    laytyp = m.laytyp
-    if len(laytyp.shape) == 1:
-        laytyp.shape = (m.nlay, 1, 1)
-        is_conf = np.logical_and(
-            (laytyp == 0), np.full(m.modelgrid.shape, True)
-        )
-    else:
-        is_conf = laytyp == 0
-
-    # calculate saturated thickness
-    sat_thickness = []
-    for per in per_idx:
-        hds = heads[per]
-        hds = np.where(hds < botm, botm, hds)  # for NWT when hds < botm
-        unconf_thickness = np.where(hds > top, top - botm, hds - botm)
-        perthickness = np.where(is_conf, thickness, unconf_thickness)
-        sat_thickness.append(perthickness)
-    sat_thickness = np.squeeze(sat_thickness)
-
-    return sat_thickness
+    mask = (heads == hdry) | (heads == hnoflo)
+    if masked_values is not None:
+        for val in masked_values:
+            mask = mask | (heads == val)
+    k = (~mask).argmax(axis=1)
+    per, i, j = np.indices(k.shape)
+    wt = heads[per.ravel(), k.ravel(), i.ravel(), j.ravel()].reshape(k.shape)
+    wt = np.squeeze(wt)
+    mask = (wt == hdry) | (wt == hnoflo)
+    if masked_values is not None:
+        for val in masked_values:
+            mask = mask | (wt == val)
+    wt = np.ma.masked_array(wt, mask)
+    return wt
 
 
 def get_gradients(heads, m, nodata, per_idx=None):
@@ -445,8 +376,7 @@ def get_extended_budget(
             matched_name = [s for s in rec_names if budget_term in s]
             if not matched_name:
                 raise RuntimeError(
-                    "Budget term " + budget_term + " not found"
-                    ' in "' + cbcfile + '" file.'
+                    f'Budget term {budget_term} not found in "{cbcfile}" file.'
                 )
             if len(matched_name) > 1:
                 raise RuntimeError(
@@ -707,12 +637,15 @@ def get_specific_discharge(
     if classical_budget:
         # get saturated thickness (head - bottom elev for unconfined layer)
         if head is None:
-            sat_thk = modelgrid.thick
+            saturated_thickness = modelgrid.remove_confining_beds(
+                modelgrid.cell_thickness
+            )
         else:
-            sat_thk = modelgrid.saturated_thick(
+            saturated_thickness = modelgrid.saturated_thickness(
                 head, mask=[model.hdry, model.hnoflo]
             )
-            sat_thk.shape = model.modelgrid.shape
+
+        saturated_thickness.shape = modelgrid.shape
 
         # inform modelgrid of no-flow and dry cells
         modelgrid = model.modelgrid
@@ -726,11 +659,11 @@ def get_specific_discharge(
 
         # get cross section areas along x
         delc = np.reshape(modelgrid.delc, (1, modelgrid.nrow, 1))
-        cross_area_x = delc * sat_thk
+        cross_area_x = delc * saturated_thickness
 
         # get cross section areas along y
         delr = np.reshape(modelgrid.delr, (1, 1, modelgrid.ncol))
-        cross_area_y = delr * sat_thk
+        cross_area_y = delr * saturated_thickness
 
         # get cross section areas along z
         cross_area_z = np.ones(modelgrid.shape) * delc * delr
@@ -740,10 +673,20 @@ def get_specific_discharge(
             qx = np.zeros(modelgrid.shape, dtype=np.float32)
             qy = np.zeros(modelgrid.shape, dtype=np.float32)
             cross_area_x = (
-                delc[:] * 0.5 * (sat_thk[:, :, :-1] + sat_thk[:, :, 1:])
+                delc[:]
+                * 0.5
+                * (
+                    saturated_thickness[:, :, :-1]
+                    + saturated_thickness[:, :, 1:]
+                )
             )
             cross_area_y = (
-                delr * 0.5 * (sat_thk[:, 1:, :] + sat_thk[:, :-1, :])
+                delr
+                * 0.5
+                * (
+                    saturated_thickness[:, 1:, :]
+                    + saturated_thickness[:, :-1, :]
+                )
             )
             qx[:, :, 1:] = (
                 0.5 * (tqx[:, :, 2:] + tqx[:, :, 1:-1]) / cross_area_x
@@ -763,15 +706,19 @@ def get_specific_discharge(
             qy = tqy / cross_area_y
             qz = tqz / cross_area_z
         else:
-            raise ValueError(
-                '"' + position + '" is not a valid value for ' "position"
-            )
+            raise ValueError(f'"{position}" is not a valid value for position')
         if position == "vertices":
             qx = modelgrid.array_at_verts(qx)
             qy = modelgrid.array_at_verts(qy)
             qz = modelgrid.array_at_verts(qz)
 
     else:
+        if position != "centers":
+            raise ValueError(
+                f"MF6 vectors cannot be calculated at {position}, 'centers' "
+                f"is the only supported option"
+            )
+
         nnodes = model.modelgrid.nnodes
         qx = np.full((nnodes), np.nan, dtype=np.float64)
         qy = np.full((nnodes), np.nan, dtype=np.float64)

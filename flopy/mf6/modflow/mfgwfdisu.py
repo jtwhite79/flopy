@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ArrayTemplateGenerator, ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -45,6 +45,14 @@ class ModflowGwfdisu(mfpackage.MFPackage):
           The value for ANGROT does not affect the model simulation, but it is
           written to the binary grid file so that postprocessors can locate the
           grid in space.
+    vertical_offset_tolerance : double
+        * vertical_offset_tolerance (double) checks are performed to ensure
+          that the top of a cell is not higher than the bottom of an overlying
+          cell. This option can be used to specify the tolerance that is used
+          for checking. If top of a cell is above the bottom of an overlying
+          cell by a value less than this tolerance, then the program will not
+          terminate with an error. The default value is zero. This option
+          should generally not be used.
     nodes : integer
         * nodes (integer) is the number of cells in the model grid.
     nja : integer
@@ -198,6 +206,9 @@ class ModflowGwfdisu(mfpackage.MFPackage):
 
     dfn = [
         [
+            "header",
+        ],
+        [
             "block options",
             "name length_units",
             "type string",
@@ -231,6 +242,15 @@ class ModflowGwfdisu(mfpackage.MFPackage):
             "type double precision",
             "reader urword",
             "optional true",
+        ],
+        [
+            "block options",
+            "name vertical_offset_tolerance",
+            "type double precision",
+            "reader urword",
+            "optional true",
+            "default_value 0.0",
+            "mf6internal voffsettol",
         ],
         [
             "block dimensions",
@@ -336,6 +356,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
             "block vertices",
             "name vertices",
             "type recarray iv xv yv",
+            "shape (nvert)",
             "reader urword",
             "optional false",
         ],
@@ -371,6 +392,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
             "block cell2d",
             "name cell2d",
             "type recarray icell2d xc yc ncvert icvert",
+            "shape (nodes)",
             "reader urword",
             "optional false",
         ],
@@ -433,6 +455,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
         xorigin=None,
         yorigin=None,
         angrot=None,
+        vertical_offset_tolerance=0.0,
         nodes=None,
         nja=None,
         nvert=None,
@@ -450,10 +473,10 @@ class ModflowGwfdisu(mfpackage.MFPackage):
         cell2d=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "disu", filename, pname, loading_package, parent_file
+            model, "disu", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -462,6 +485,9 @@ class ModflowGwfdisu(mfpackage.MFPackage):
         self.xorigin = self.build_mfdata("xorigin", xorigin)
         self.yorigin = self.build_mfdata("yorigin", yorigin)
         self.angrot = self.build_mfdata("angrot", angrot)
+        self.vertical_offset_tolerance = self.build_mfdata(
+            "vertical_offset_tolerance", vertical_offset_tolerance
+        )
         self.nodes = self.build_mfdata("nodes", nodes)
         self.nja = self.build_mfdata("nja", nja)
         self.nvert = self.build_mfdata("nvert", nvert)

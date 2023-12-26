@@ -1,15 +1,14 @@
 import os
-import sys
 import warnings
 
 import numpy as np
-from .mfdis import get_layer
-from ..utils import check
-from ..utils.flopy_io import line_parse, pop_item, get_next_line
-from ..utils import MfList
-from ..utils.recarray_utils import create_empty_recarray
+import pandas as pd
 
 from ..pakbase import Package
+from ..utils import MfList, check
+from ..utils.flopy_io import get_next_line, line_parse, pop_item
+from ..utils.recarray_utils import create_empty_recarray
+from .mfdis import get_layer
 
 
 class Mnw:
@@ -453,6 +452,8 @@ class Mnw:
         # does this need to be Mflist?
         self.stress_period_data = self.get_empty_stress_period_data(nper)
         if stress_period_data is not None:
+            if isinstance(stress_period_data, pd.DataFrame):
+                stress_period_data = stress_period_data.to_records(index=False)
             for n in stress_period_data.dtype.names:
                 self.stress_period_data[n] = stress_period_data[n]
 
@@ -461,6 +462,8 @@ class Mnw:
             np.abs(nnodes), aux_names=self.aux
         )
         if node_data is not None:
+            if isinstance(node_data, pd.DataFrame):
+                node_data = node_data.to_records(index=False)
             for n in node_data.dtype.names:
                 self.node_data[n] = node_data[n]
                 # convert strings to lower case
@@ -847,16 +850,14 @@ class Mnw:
             if self.pumploc > 0:
                 f_mnw.write(
                     indent
-                    + "{:.0f} {:.0f} {:.0f}\n".format(
-                        self.pumplay, self.pumprow, self.pumpcol
-                    )
+                    + f"{self.pumplay:.0f} {self.pumprow:.0f} {self.pumpcol:.0f}\n"
                 )
             elif self.pumploc < 0:
-                fmt = indent + "{}\n".format(float_format)
+                fmt = indent + f"{float_format}\n"
                 f_mnw.write(fmt.format(self.zpump))
         # dataset 2f
         if self.qlimit > 0:
-            fmt = indent + "{} ".format(float_format) + "{:.0f}"
+            fmt = indent + f"{float_format} " + "{:.0f}"
             f_mnw.write(fmt.format(self.hlim, self.qcut))
             if self.qcut != 0:
                 fmt = " {0} {0}".format(float_format)
@@ -900,19 +901,9 @@ class ModflowMnw2(Package):
         value of "NODTOT". The model will then reset "MNWMAX" to its absolute
         value. The value of "ipakcb" will become the third value on that
         line, etc.
-    ipakcb : int
-        is a flag and a unit number:
-            if ipakcb > 0, then it is the unit number to which MNW cell-by-cell
-            flow terms will be recorded whenever cell-by-cell budget data are
-            written to a file (as determined by the outputcontrol options of
-            MODFLOW).
-            if ipakcb = 0, then MNW cell-by-cell flow terms will not be printed
-                or recorded.
-            if ipakcb < 0, then well injection or withdrawal rates and water
-                levels in the well and its multiple cells will be printed in
-                the main MODFLOW listing (output) file whenever cell-by-cell
-                budget data are written to a file (as determined by the output
-                control options of MODFLOW).
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     mnwprnt : integer
         Flag controlling the level of detail of information about multi-node
         wells to be written to the main MODFLOW listing (output) file.
@@ -965,9 +956,9 @@ class ModflowMnw2(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output names will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
@@ -1000,7 +991,7 @@ class ModflowMnw2(Package):
         model,
         mnwmax=0,
         nodtot=None,
-        ipakcb=0,
+        ipakcb=None,
         mnwprnt=0,
         aux=[],
         node_data=None,
@@ -1012,51 +1003,26 @@ class ModflowMnw2(Package):
         filenames=None,
         gwt=False,
     ):
-        """
-        Package constructor
-        """
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowMnw2._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowMnw2._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
-        # Fill namefile items
-        name = [ModflowMnw2._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
-        self.url = "mnw2.htm"
+        self.url = "mnw2.html"
         self.nper = self.parent.nrow_ncol_nlay_nper[-1]
         self.nper = (
             1 if self.nper == 0 else self.nper
@@ -1064,16 +1030,11 @@ class ModflowMnw2(Package):
         self.structured = self.parent.structured
 
         # Dataset 0
-        self.heading = (
-            "# {} package for ".format(self.name[0])
-            + " {}, ".format(model.version_types[model.version])
-            + "generated by Flopy."
-        )
+        self._generate_heading()
         # Dataset 1
         # maximum number of multi-node wells to be simulated
         self.mnwmax = int(mnwmax)
         self.nodtot = nodtot  # user-specified maximum number of nodes
-        self.ipakcb = ipakcb
         self.mnwprnt = int(mnwprnt)  # -verbosity flag
         self.aux = aux  # -list of optional auxiliary parameters
 
@@ -1082,6 +1043,8 @@ class ModflowMnw2(Package):
         self.node_data = self.get_empty_node_data(0, aux_names=aux)
 
         if node_data is not None:
+            if isinstance(node_data, pd.DataFrame):
+                node_data = node_data.to_records(index=False)
             self.node_data = self.get_empty_node_data(
                 len(node_data), aux_names=aux
             )
@@ -1155,7 +1118,6 @@ class ModflowMnw2(Package):
                 ]
 
     def _sort_node_data(self):
-
         node_data = self.node_data
         node_data_list = []
         wells = sorted(np.unique(node_data["wellid"]).tolist())
@@ -1352,7 +1314,7 @@ class ModflowMnw2(Package):
         """
 
         if model.verbose:
-            sys.stdout.write("loading mnw2 package file...\n")
+            print("loading mnw2 package file...")
 
         structured = model.structured
         if nper is None:
@@ -1768,13 +1730,13 @@ class ModflowMnw2(Package):
         None
 
         """
-        f_mnw.write("{:.0f} ".format(self.mnwmax))
+        f_mnw.write(f"{self.mnwmax:.0f} ")
         if self.mnwmax < 0:
-            f_mnw.write("{:.0f} ".format(self.nodtot))
-        f_mnw.write("{:.0f} {:.0f}".format(self.ipakcb, self.mnwprnt))
+            f_mnw.write(f"{self.nodtot:.0f} ")
+        f_mnw.write(f"{self.ipakcb:.0f} {self.mnwprnt:.0f}")
         if len(self.aux) > 0:
             for abc in self.aux:
-                f_mnw.write(" aux {}".format(abc))
+                f_mnw.write(f" aux {abc}")
         f_mnw.write("\n")
 
     def write_file(
@@ -1805,7 +1767,7 @@ class ModflowMnw2(Package):
         f_mnw = open(self.fn_path, "w")
 
         # dataset 0 (header)
-        f_mnw.write("{0}\n".format(self.heading))
+        f_mnw.write(f"{self.heading}\n")
 
         # dataset 1
         self._write_1(f_mnw)
@@ -1824,13 +1786,8 @@ class ModflowMnw2(Package):
 
         # dataset 3
         for per in range(self.nper):
-            f_mnw.write(
-                "{:.0f}  Stress Period {:.0f}\n".format(
-                    self.itmp[per], per + 1
-                )
-            )
+            f_mnw.write(f"{self.itmp[per]:.0f}  Stress Period {per + 1}\n")
             if self.itmp[per] > 0:
-
                 for n in range(self.itmp[per]):
                     # dataset 4
                     wellid = self.stress_period_data[per].wellid[n]

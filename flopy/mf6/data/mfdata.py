@@ -1,18 +1,20 @@
-from operator import itemgetter
-import sys
 import inspect
+import sys
+from operator import itemgetter
+
+from ...datbase import DataInterface, DataType
+from ...mbase import ModelInterface
+from ...utils import datautil
+from ..coordinates.modeldimensions import DataDimensions, DiscretizationType
+from ..data.mfstructure import DatumType
 from ..mfbase import (
+    FlopyException,
     MFDataException,
     MFInvalidTransientBlockHeaderException,
-    FlopyException,
     VerbosityLevel,
 )
-from ..data.mfstructure import DatumType
-from ..coordinates.modeldimensions import DataDimensions, DiscretizationType
-from ...datbase import DataInterface, DataType
 from .mfdatastorage import DataStructureType
 from .mfdatautil import to_string
-from ...mbase import ModelInterface
 
 
 class MFTransient:
@@ -76,6 +78,7 @@ class MFTransient:
     def __init__(self, *args, **kwargs):
         self._current_key = None
         self._data_storage = None
+        self.empty_keys = {}
 
     def add_transient_key(self, transient_key):
         if isinstance(transient_key, int):
@@ -92,14 +95,17 @@ class MFTransient:
                 # update current key
                 self._current_key = new_transient_key
 
-    def _transient_setup(self, data_storage):
-        self._data_storage = data_storage
-
     def get_data_prep(self, transient_key=0):
         if isinstance(transient_key, int):
             self._verify_sp(transient_key)
         self._current_key = transient_key
         if transient_key not in self._data_storage:
+            if (
+                isinstance(transient_key, tuple)
+                and transient_key[0] in self._data_storage
+            ):
+                self._current_key = transient_key[0]
+                return
             self.add_transient_key(transient_key)
 
     def _set_data_prep(self, data, transient_key=0):
@@ -122,10 +128,10 @@ class MFTransient:
         transient_key = block_header.get_transient_key()
         if isinstance(transient_key, int):
             if not self._verify_sp(transient_key):
-                message = 'Invalid transient key "{}" in block' ' "{}"'.format(
-                    transient_key, block_header.name
+                raise MFInvalidTransientBlockHeaderException(
+                    f'Invalid transient key "{transient_key}" '
+                    f'in block "{block_header.name}"'
                 )
-                raise MFInvalidTransientBlockHeaderException(message)
         if transient_key not in self._data_storage:
             self.add_transient_key(transient_key)
         self._current_key = transient_key
@@ -226,7 +232,7 @@ class MFData(DataInterface):
         path=None,
         dimensions=None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         # initialize
         self._current_key = None
@@ -245,13 +251,13 @@ class MFData(DataInterface):
         self._data_type = structure.type
         self._keyword = ""
         if self._simulation_data is not None:
-            self._data_dimensions = DataDimensions(dimensions, structure)
+            self.data_dimensions = DataDimensions(dimensions, structure)
             # build a unique path in the simulation dictionary
             self._org_path = self._path
             index = 0
             while self._path in self._simulation_data.mfdata:
                 self._path = self._org_path[:-1] + (
-                    "{}_{}".format(self._org_path[-1], index),
+                    f"{self._org_path[-1]}_{index}",
                 )
                 index += 1
         self._structure_init()
@@ -267,6 +273,10 @@ class MFData(DataInterface):
 
     def __str__(self):
         return str(self._get_storage_obj())
+
+    @property
+    def path(self):
+        return self._path
 
     @property
     def array(self):
@@ -333,7 +343,7 @@ class MFData(DataInterface):
         return None, None
 
     def export(self, f, **kwargs):
-        from flopy.export import utils
+        from ...export import utils
 
         if (
             self.data_type == DataType.array2d
@@ -370,13 +380,13 @@ class MFData(DataInterface):
         layers = []
         layer_dims = self.structure.data_item_structures[0].layer_dims
         if len(layer_dims) == 1:
-            layers.append(self._data_dimensions.get_model_grid().num_layers())
+            layers.append(self.data_dimensions.get_model_grid().num_layers())
         else:
             for layer in layer_dims:
                 if layer == "nlay":
                     # get the layer size from the model grid
                     try:
-                        model_grid = self._data_dimensions.get_model_grid()
+                        model_grid = self.data_dimensions.get_model_grid()
                     except Exception as ex:
                         type_, value_, traceback_ = sys.exc_info()
                         raise MFDataException(
@@ -438,9 +448,7 @@ class MFData(DataInterface):
             else:
                 if data_item.description:
                     if description:
-                        description = "{}\n{}".format(
-                            description, data_item.description
-                        )
+                        description = f"{description}\n{data_item.description}"
                     else:
                         description = data_item.description
         return description
@@ -513,13 +521,13 @@ class MFData(DataInterface):
             const_val,
             data_type,
             self._simulation_data,
-            self._data_dimensions,
+            self.data_dimensions,
             verify_data=self._simulation_data.verify_data,
         )
-        return "{}{}".format(sim_data.indent_string.join(const_format), suffix)
+        return f"{sim_data.indent_string.join(const_format)}{suffix}"
 
     def _get_aux_var_name(self, aux_var_index):
-        aux_var_names = self._data_dimensions.package_dim.get_aux_variables()
+        aux_var_names = self.data_dimensions.package_dim.get_aux_variables()
         # TODO: Verify that this works for multi-dimensional layering
         return aux_var_names[0][aux_var_index[0] + 1]
 
@@ -585,28 +593,43 @@ class MFMultiDimVar(MFData):
         else:
             layer_storage = storage.layer_storage[layer]
         # resolve external file path
-        file_mgmt = self._simulation_data.mfpath
-        model_name = self._data_dimensions.package_dim.model_dim[0].model_name
-        ext_file_path = file_mgmt.get_updated_path(
-            layer_storage.fname, model_name, ext_file_action
+        ret, fname = self._get_external_formatting_str(
+            layer_storage.fname,
+            layer_storage.factor,
+            layer_storage.binary,
+            layer_storage.iprn,
+            storage.data_structure_type,
+            ext_file_action,
         )
-        layer_storage.fname = ext_file_path
-        ext_format = ["OPEN/CLOSE", "'{}'".format(ext_file_path)]
-        if storage.data_structure_type != DataStructureType.recarray:
-            if layer_storage.factor is not None:
+        layer_storage.fname = fname
+        return ret
+
+    def _get_external_formatting_str(
+        self, fname, factor, binary, iprn, data_type, ext_file_action
+    ):
+        file_mgmt = self._simulation_data.mfpath
+        model_name = self.data_dimensions.package_dim.model_dim[0].model_name
+        ext_file_path = file_mgmt.get_updated_path(
+            fname, model_name, ext_file_action
+        )
+        fname = datautil.clean_filename(ext_file_path)
+        ext_format = ["OPEN/CLOSE", f"'{ext_file_path}'"]
+        if data_type != DataStructureType.recarray:
+            if factor is not None:
                 data_type = self.structure.get_datum_type(
                     return_enum_type=True
                 )
                 ext_format.append("FACTOR")
                 if data_type == DatumType.integer:
-                    ext_format.append(str(int(layer_storage.factor)))
+                    ext_format.append(str(int(factor)))
                 else:
-                    ext_format.append(str(layer_storage.factor))
-        if layer_storage.binary:
+                    ext_format.append(str(factor))
+        if binary:
             ext_format.append("(BINARY)")
-        if layer_storage.iprn is not None:
+        if iprn is not None:
             ext_format.append("IPRN")
-            ext_format.append(str(layer_storage.iprn))
-        return "{}\n".format(
-            self._simulation_data.indent_string.join(ext_format)
+            ext_format.append(str(iprn))
+        return (
+            f"{self._simulation_data.indent_string.join(ext_format)}\n",
+            fname,
         )

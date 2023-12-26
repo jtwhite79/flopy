@@ -1,4 +1,3 @@
-from __future__ import print_function
 from ..pest import tplarray as tplarray
 
 
@@ -38,12 +37,11 @@ class TemplateWriter:
         for p in self.plist:
             ftype = p.mfpackage.upper()
             if ftype not in ftypelist:
-
                 # Verify package exists in model
                 try:
                     pak = self.model.get_package(ftype)
                 except:
-                    raise Exception("Package type {} not found.".format(ftype))
+                    raise Exception(f"Package type {ftype} not found.")
 
                 # Check to make sure pak has p.type as an attribute
                 if not hasattr(pak, p.type.lower()):
@@ -57,10 +55,7 @@ class TemplateWriter:
                 ftypelist.append(ftype)
 
         # Print a list of packages that will be parameterized
-        print(
-            "The following packages will be parameterized: "
-            "{}\n".format(ftypelist)
-        )
+        print(f"The following packages will be parameterized: {ftypelist}\n")
 
         # Go through each package, and then through each parameter and make
         # the substitution.  Then write the template file.
@@ -69,7 +64,6 @@ class TemplateWriter:
             paktpl = copy.copy(pak)
 
             for p in self.plist:
-
                 # Skip if parameter doesn't apply to this package
                 if p.mfpackage.upper() != ftype:
                     continue

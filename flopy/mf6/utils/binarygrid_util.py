@@ -5,11 +5,11 @@ be accessed by the user.
 
 """
 
+import warnings
+
 import numpy as np
-import collections
 
 from ...utils.utils_def import FlopyBinaryData
-import warnings
 
 warnings.simplefilter("always", DeprecationWarning)
 
@@ -62,13 +62,13 @@ class MfGrdFile(FlopyBinaryData):
         self.set_float(precision=precision)
         self.verbose = verbose
         self._initial_len = 50
-        self._recorddict = collections.OrderedDict()
-        self._datadict = collections.OrderedDict()
+        self._recorddict = {}
+        self._datadict = {}
         self._recordkeys = []
         self.filename = filename
 
         if self.verbose:
-            print("\nProcessing binary grid file: {}".format(filename))
+            print(f"\nProcessing binary grid file: {filename}")
 
         # open the grb file
         self.file = open(filename, "rb")
@@ -119,21 +119,14 @@ class MfGrdFile(FlopyBinaryData):
                 s = ""
                 if nd > 0:
                     s = shp
-                msg = "  File contains data for {} ".format(
-                    key
-                ) + "with shape {}".format(s)
-                print(msg)
+                print(f"  File contains data for {key} with shape {s}")
 
         if self.verbose:
-            msg = "Attempting to read {} ".format(
-                self._ntxt
-            ) + "records from {}".format(filename)
-            print(msg)
+            print(f"Attempting to read {self._ntxt} records from {filename}")
 
         for key in self._recordkeys:
             if self.verbose:
-                msg = "  Reading {}".format(key)
-                print(msg)
+                print(f"  Reading {key}")
             dt, nd, shp = self._recorddict[key]
             # read array data
             if nd > 0:
@@ -153,13 +146,9 @@ class MfGrdFile(FlopyBinaryData):
 
             if self.verbose:
                 if nd == 0:
-                    msg = "  {} = {}".format(key, v)
-                    print(msg)
+                    print(f"  {key} = {v}")
                 else:
-                    msg = "  {}: ".format(key) + "min = {} max = {}".format(
-                        v.min(), v.max()
-                    )
-                    print(msg)
+                    print(f"  {key}: min = {v.min()} max = {v.max()}")
 
         # close the file
         self.file.close()
@@ -188,8 +177,8 @@ class MfGrdFile(FlopyBinaryData):
         modelgrid : grid
         """
         from ...discretization.structuredgrid import StructuredGrid
-        from ...discretization.vertexgrid import VertexGrid
         from ...discretization.unstructuredgrid import UnstructuredGrid
+        from ...discretization.vertexgrid import VertexGrid
 
         modelgrid = None
         idomain = self.idomain
@@ -255,64 +244,11 @@ class MfGrdFile(FlopyBinaryData):
                 )
 
         except:
-            print("could not set model grid for {}".format(self.file.name))
+            print(f"could not set model grid for {self.file.name}")
 
         self.__modelgrid = modelgrid
 
         return
-
-    def __set_spatialreference(self):
-        """
-        Define structured or unstructured spatial reference based on
-        MODFLOW 6 discretization type.
-        Returns
-        -------
-        sr : SpatialReference
-        """
-        sr = None
-        try:
-            if self._grid_type in ("DISV", "DISU"):
-                from flopy.utils.reference import SpatialReferenceUnstructured
-
-                try:
-                    vertc = self.xycentroids()
-                    xc = vertc[:, 0]
-                    yc = vertc[:, 1]
-                    sr = SpatialReferenceUnstructured(
-                        xc,
-                        yc,
-                        self.__modelgrid.verts,
-                        self.__modelgrid.iverts,
-                        [xc.shape[0]],
-                    )
-                except:
-                    print(
-                        "could not set spatial reference for "
-                        "{} discretization defined in "
-                        "{}".format(self._grid_type, self.file.name)
-                    )
-            elif self._grid_type == "DIS":
-                from flopy.utils.reference import SpatialReference
-
-                delr, delc = self._datadict["DELR"], self._datadict["DELC"]
-                xorigin, yorigin, rot = (
-                    self._datadict["XORIGIN"],
-                    self._datadict["YORIGIN"],
-                    self._datadict["ANGROT"],
-                )
-                sr = SpatialReference(
-                    delr=delr,
-                    delc=delc,
-                    xll=xorigin,
-                    yll=yorigin,
-                    rotation=rot,
-                )
-        except:
-            print(
-                "could not set spatial reference for {}".format(self.file.name)
-            )
-
-        return sr
 
     def __build_vertices_cell2d(self):
         """
@@ -356,8 +292,7 @@ class MfGrdFile(FlopyBinaryData):
                 i1 = iavert[ivert + 1]
                 iverts.append((javert[i0:i1]).tolist())
             if self.verbose:
-                msg = "returning iverts from {}".format(self.file.name)
-                print(msg)
+                print(f"returning iverts from {self.file.name}")
         return iverts
 
     def __get_verts(self):
@@ -382,8 +317,7 @@ class MfGrdFile(FlopyBinaryData):
                     for idx in range(shpvert[0])
                 ]
             if self.verbose:
-                msg = "returning verts from {}".format(self.file.name)
-                print(msg)
+                print(f"returning verts from {self.file.name}")
         return verts
 
     def __get_cellcenters(self):
@@ -403,8 +337,7 @@ class MfGrdFile(FlopyBinaryData):
             y = self._datadict["CELLY"]
             xycellcenters = np.column_stack((x, y))
             if self.verbose:
-                msg = "returning cell centers from {}".format(self.file.name)
-                print(msg)
+                print(f"returning cell centers from {self.file.name}")
         return xycellcenters
 
     # properties
@@ -654,7 +587,7 @@ class MfGrdFile(FlopyBinaryData):
     @property
     def nja(self):
         """
-        Number of non-zero entries in the CRS column pointer vector.
+        Number of non-zero entries JA vector array.
 
         Returns
         -------
@@ -665,7 +598,11 @@ class MfGrdFile(FlopyBinaryData):
     @property
     def ia(self):
         """
-        CRS row pointers for the model grid.
+        index array that defines indexes for `.ja`. Each ia value is the
+        starting position of data for a cell. [ia[n]:ia[n+1]] would give you
+        all data for a cell. ia[n] is also the location of data for the
+        diagonal position. See `.ja` property documentation
+        for an example of getting a cell's number and connected cells
 
         Returns
         -------
@@ -676,22 +613,40 @@ class MfGrdFile(FlopyBinaryData):
     @property
     def ja(self):
         """
-        CRS column pointers for the model grid.
+        Flat jagged connection array for a model. `.ja` for a cell includes the
+        cell number and the cell number for all connected cells. Indexes for
+        cells are stored in the `.ia` variable.
 
         Returns
         -------
         ja : ndarray of ints
+
+        Examples
+        --------
+        >>> from flopy.mf6.utils import MfGrdFile
+        >>> grb = MfGrdFile("my_model.dis.grb")
+        >>> ia = grb.ia
+        >>> ja = grb.ja
+        >>> # get connections for node 0
+        >>> ja_node0 = ja[ia[0]:ia[1]]
+        >>> node = ja_node0[0]
+        >>> connections = ja_node0[1:]
         """
         return self._ja
 
     @property
     def iavert(self):
         """
-        CRS cell pointers for cell vertices.
+        index array that defines indexes for `.javart`. Each ia value is the
+        starting position of data for a cell. [iavert[n]:iavert[n+1]] would
+        give you all data for a cell. See `.javert` property documentation for
+        an example of getting cell number and it's vertex numbers.
+        Alternatively, the `.iverts` property can be used to get this
+        information
 
         Returns
         -------
-        iavert : ndarray of ints
+        iavert : ndarray of ints or None for structured grids
         """
         if "IAVERT" in self._datadict:
             iavert = self._datadict["IAVERT"] - 1
@@ -702,11 +657,20 @@ class MfGrdFile(FlopyBinaryData):
     @property
     def javert(self):
         """
-        CRS vertex numbers for the vertices comprising each cell.
+        Flat jagged array of vertex numbers that comprise all of the cells
 
         Returns
         -------
-        javerts : ndarray of ints
+        javerts : ndarray of ints or None for structured grids
+
+        Examples
+        --------
+        >>> from flopy.mf6.utils import MfGrdFile
+        >>> grb = MfGrdFile("my_model.dis.grb")
+        >>> iavert = self.iavert
+        >>> javert = self.javert
+        >>> # get vertex numbers for node 0
+        >>> vertnums = javert[iavert[0]:iavert[1]]
         """
         if "JAVERT" in self._datadict:
             javert = self._datadict["JAVERT"] - 1
@@ -774,20 +738,3 @@ class MfGrdFile(FlopyBinaryData):
         else:
             vertices, cell2d = None, None
         return vertices, cell2d
-
-    @property
-    def spatialreference(self):
-        """
-        Spatial reference for model grid.
-
-        Returns
-        -------
-        spatialreference : SpatialReference
-        """
-        warnings.warn(
-            "SpatialReference has been deprecated and will be "
-            "removed in version 3.3.5. Use get_modelgrid instead.",
-            category=DeprecationWarning,
-        )
-
-        return self.__set_spatialreference()

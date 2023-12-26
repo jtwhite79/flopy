@@ -2,17 +2,37 @@ name: flopy
 channels:
   - conda-forge
 dependencies:
-  - pylint
-  - flake8
+  - pip
+
+  # required
+  - python>=3.8
+  - numpy>=1.15.0
+  - matplotlib>=1.4.0
+
+  # lint
   - black
-  - nose
-  - nose-timer
+  - cffconvert
+  - flake8
+  - isort
+  - pylint
+
+  # test
   - coverage
-  - appdirs
-  - requests
-  - numpy
-  - matplotlib
-  - bmipy
+  - flaky
+  - filelock
+  - jupyter
+  - jupytext
+  - modflow-devtools
+  - pytest
+  - pytest-benchmark
+  - pytest-cases
+  - pytest-cov
+  - pytest-dotenv
+  - pytest-xdist
+  - virtualenv
+
+  # optional
+  - python-dateutil>=2.4.0
   - affine
   - scipy
   - pandas
@@ -22,6 +42,12 @@ dependencies:
   - fiona
   - descartes
   - pyproj
-  - shapely
-  - geos=3.8.1  # required until 3.9.2 is available
+  - shapely>=1.8
+  - geos
   - geojson
+  - vtk
+  - rasterstats
+  - pyvista
+  - imageio
+  - pymetis
+  - xmipy

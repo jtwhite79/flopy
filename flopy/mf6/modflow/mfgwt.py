@@ -1,8 +1,8 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfmodel
-from ..data.mfdatautil import ListTemplateGenerator, ArrayTemplateGenerator
+from ..data.mfdatautil import ArrayTemplateGenerator, ListTemplateGenerator
 
 
 class ModflowGwt(mfmodel.MFModel):
@@ -78,14 +78,13 @@ class ModflowGwt(mfmodel.MFModel):
         modelname="model",
         model_nam_file=None,
         version="mf6",
-        exe_name="mf6.exe",
+        exe_name="mf6",
         model_rel_path=".",
         list=None,
         print_input=None,
         print_flows=None,
         save_flows=None,
-        packages=None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             simulation,
@@ -95,14 +94,18 @@ class ModflowGwt(mfmodel.MFModel):
             version=version,
             exe_name=exe_name,
             model_rel_path=model_rel_path,
-            **kwargs
+            **kwargs,
         )
 
         self.name_file.list.set_data(list)
         self.name_file.print_input.set_data(print_input)
         self.name_file.print_flows.set_data(print_flows)
         self.name_file.save_flows.set_data(save_flows)
-        self.name_file.packages.set_data(packages)
+
+        self.list = self.name_file.list
+        self.print_input = self.name_file.print_input
+        self.print_flows = self.name_file.print_flows
+        self.save_flows = self.name_file.save_flows
 
     @classmethod
     def load(
@@ -112,17 +115,18 @@ class ModflowGwt(mfmodel.MFModel):
         modelname="NewModel",
         model_nam_file="modflowtest.nam",
         version="mf6",
-        exe_name="mf6.exe",
+        exe_name="mf6",
         strict=True,
         model_rel_path=".",
         load_only=None,
     ):
         return mfmodel.MFModel.load_base(
+            cls,
             simulation,
             structure,
             modelname,
             model_nam_file,
-            "gwt",
+            "gwt6",
             version,
             exe_name,
             strict,

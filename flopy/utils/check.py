@@ -1,6 +1,11 @@
 import os
+from pathlib import Path
+from typing import Optional, Union
+
 import numpy as np
 from numpy.lib import recfunctions
+
+from ..utils.flopy_io import relpath_safe
 from ..utils.recarray_utils import recarray
 from ..utils.util_array import Util3d
 
@@ -13,6 +18,9 @@ class check:
     ----------
     package : object
         Instance of Package class.
+    f : str or PathLike, optional
+        Path to the summary file. If no path is provided, a summary
+        file is not created and results are only written to stdout.
     verbose : bool
         Boolean flag used to determine if check method results are
         written to the screen
@@ -87,22 +95,19 @@ class check:
     def __init__(
         self,
         package,
-        f=None,
+        f: Optional[Union[str, os.PathLike]] = None,
         verbose=True,
         level=1,
         property_threshold_values={},
     ):
-
         # allow for instantiation with model or package
         # if isinstance(package, BaseModel): didn't work
         if hasattr(package, "parent"):
             self.model = package.parent
-            self.prefix = "{} PACKAGE DATA VALIDATION".format(package.name[0])
+            self.prefix = f"{package.name[0]} PACKAGE DATA VALIDATION"
         else:
             self.model = package
-            self.prefix = "{} MODEL DATA VALIDATION SUMMARY".format(
-                self.model.name
-            )
+            self.prefix = f"{self.model.name} MODEL DATA VALIDATION SUMMARY"
         self.package = package
         if "structured" in self.model.__dict__:
             self.structured = self.model.structured
@@ -117,15 +122,15 @@ class check:
 
         self.f = None
         if f is not None:
-            if isinstance(f, str):
+            if isinstance(f, (str, os.PathLike)):
                 if os.path.split(f)[0] == "":
                     self.summaryfile = os.path.join(self.model.model_ws, f)
                 else:  # if a path is supplied with summary file, save there
-                    self.summaryfile = f
+                    self.summaryfile = str(f)
                 self.f = open(self.summaryfile, "w")
             else:
                 self.f = f
-        self.txt = "\n{}:\n".format(self.prefix)
+        self.txt = f"\n{self.prefix}:\n"
 
     def _add_to_summary(
         self,
@@ -190,8 +195,7 @@ class check:
         Notes
         -----
         info about appending to record arrays (views vs. copies and upcoming
-        changes to numpy):
-        http://stackoverflow.com/questions/22865877/how-do-i-write-to-multiple-fields-of-a-structured-array
+        changes to numpy): http://stackoverflow.com/q/22865877/
         """
         txt = ""
         array = array.copy()
@@ -338,9 +342,9 @@ class check:
                 self.summary_array = np.append(self.summary_array, sa).view(
                     np.recarray
                 )
-                self.remove_passed(msg + "s")
+                self.remove_passed(f"{msg}s")
             else:
-                self.append_passed(msg + "s")
+                self.append_passed(f"{msg}s")
 
     def _list_spd_check_violations(
         self,
@@ -437,7 +441,7 @@ class check:
         """
         mg = self.model.modelgrid
         if mg.grid_type == "structured":
-            nlaycbd = mg._StructuredGrid__laycbd.sum() if include_cbd else 0
+            nlaycbd = mg.laycbd.sum() if include_cbd else 0
             inds = (mg.nlay + nlaycbd, mg.nrow, mg.ncol)
         elif mg.grid_type == "vertex":
             inds = (mg.nlay, mg.ncpl)
@@ -544,8 +548,7 @@ class check:
         dtype2 = np.dtype({name: arr.dtype.fields[name] for name in fields})
         return np.ndarray(arr.shape, dtype2, arr, 0, arr.strides)
 
-    def summarize(self):
-
+    def summarize(self, scrub: bool = False):
         # write the summary array to text file (all levels)
         if self.f is not None:
             self.f.write(self.print_summary())
@@ -558,7 +561,7 @@ class check:
             packages = self.summary_array.package
             desc = self.summary_array.desc
             self.summary_array["desc"] = [
-                "\r    {} package: {}".format(packages[i], d.strip())
+                f"\r    {packages[i]} package: {d.strip()}"
                 if packages[i] != "model"
                 else d
                 for i, d in enumerate(desc)
@@ -569,15 +572,15 @@ class check:
             desc = a.desc
             t = ""
             if len(a) > 0:
-                t += "  {} {}s:\n".format(len(a), etype)
+                t += f"  {len(a)} {etype}s:\n"
                 if len(a) == 1:
                     t = t.replace("s", "")  # grammar
                 for e in np.unique(desc):
                     n = np.sum(desc == e)
                     if n > 1:
-                        t += "    {} instances of {}\n".format(n, e)
+                        t += f"    {n} instances of {e}\n"
                     else:
-                        t += "    {} instance of {}\n".format(n, e)
+                        t += f"    {n} instance of {e}\n"
                 txt += t
         if txt == "":
             txt += "  No errors or warnings encountered.\n"
@@ -587,20 +590,20 @@ class check:
             and self.verbose
             and self.summary_array.shape[0] > 0
         ):
-            txt += "  see {} for details.\n".format(self.summaryfile)
+            txt += f"  see {relpath_safe(self.summaryfile, scrub=scrub)} for details.\n"
 
         # print checks that passed for higher levels
         if len(self.passed) > 0 and self.level > 0:
             txt += "\n  Checks that passed:\n"
             for chkname in self.passed:
-                txt += "    {}\n".format(chkname)
+                txt += f"    {chkname}\n"
         self.txt += txt
 
         # for level 2, print the whole summary table at the bottom
         if self.level > 1:
             # kludge to improve screen printing
             self.summary_array["package"] = [
-                "{} ".format(s) for s in self.summary_array["package"]
+                f"{s} " for s in self.summary_array["package"]
             ]
             self.txt += "\nDETAILED SUMMARY:\n{}".format(
                 self.print_summary(float_format="{:.2e}", delimiter="\t")
@@ -611,7 +614,9 @@ class check:
         elif self.summary_array.shape[0] > 0 and self.level > 0:
             print("Errors and/or Warnings encountered.")
             if self.f is not None:
-                print("  see {} for details.\n".format(self.summaryfile))
+                print(
+                    f"  see {relpath_safe(self.summaryfile, scrub=scrub)} for details.\n"
+                )
 
     # start of older model specific code
     def _has_cell_indices(self, stress_period_data):
@@ -753,7 +758,7 @@ def _fmt_string_list(array, float_format="{}"):
             )
         else:
             raise Exception(
-                "MfList.fmt_string error: unknown vtype in dtype:" + vtype
+                f"MfList.fmt_string error: unknown vtype in dtype:{vtype}"
             )
     return fmt_string
 
@@ -799,8 +804,7 @@ def _print_rec_array(array, cols=None, delimiter=" ", float_format="{:.6f}"):
 def fields_view(arr, fields):
     """
     creates view of array that only contains the fields in fields.
-    http://stackoverflow.com/questions/15182381/how-to-return-a-view-of-
-    several-columns-in-numpy-structured-array
+    https://stackoverflow.com/q/15182381/
     """
     dtype2 = np.dtype({name: arr.dtype.fields[name] for name in fields})
     return np.ndarray(arr.shape, dtype2, arr, 0, arr.strides)

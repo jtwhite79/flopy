@@ -6,9 +6,11 @@ mp7particlegroup module.  Contains the ParticleGroup, and
 """
 
 import os
+
 import numpy as np
+
 from ..utils.util_array import Util2d
-from .mp7particledata import ParticleData, NodeParticleData
+from .mp7particledata import NodeParticleData, ParticleData
 
 
 class _Modpath7ParticleGroup:
@@ -73,8 +75,12 @@ class _Modpath7ParticleGroup:
         elif len(releasedata) == 3:
             releaseoption = 2
             releasetimecount = int(releasedata[0])
-            releaseinterval = int(releasedata[2])
-            releasetimes = np.array(releasedata[1], dtype=np.float32)
+            releaseinterval = releasedata[2]
+            releasetimes = np.arange(
+                releasedata[1],
+                releasedata[1] + releasetimecount * releaseinterval,
+                releaseinterval,
+            ).astype(np.float32)
         elif len(releasedata) == 2:
             releaseoption = 3
             releasetimecount = int(releasedata[0])
@@ -126,14 +132,14 @@ class _Modpath7ParticleGroup:
             )
 
         # item 26
-        fp.write("{}\n".format(self.particlegroupname))
+        fp.write(f"{self.particlegroupname}\n")
 
         # item 27
-        fp.write("{}\n".format(self.releaseoption))
+        fp.write(f"{self.releaseoption}\n")
 
         if self.releaseoption == 1:
             # item 28
-            fp.write("{}\n".format(self.releasetimes[0]))
+            fp.write(f"{self.releasetimes[0]}\n")
         elif self.releaseoption == 2:
             # item 29
             fp.write(
@@ -145,7 +151,7 @@ class _Modpath7ParticleGroup:
             )
         elif self.releaseoption == 3:
             # item 30
-            fp.write("{}\n".format(self.releasetimecount))
+            fp.write(f"{self.releasetimecount}\n")
             # item 31
             tp = self.releasetimes
             v = Util2d(
@@ -155,7 +161,7 @@ class _Modpath7ParticleGroup:
 
         # item 32
         if self.external:
-            line = "EXTERNAL {}\n".format(self.filename)
+            line = f"EXTERNAL {self.filename}\n"
         else:
             line = "INTERNAL\n"
         fp.write(line)
@@ -225,10 +231,10 @@ class ParticleGroup(_Modpath7ParticleGroup):
 
         # convert particledata to a list if a ParticleData type
         if not isinstance(particledata, ParticleData):
-            msg = "{}: particledata must be a".format(
-                self.name
-            ) + " ParticleData instance not a {}".format(type(particledata))
-            raise TypeError(msg)
+            raise TypeError(
+                f"{self.name}: particledata must be a "
+                f"ParticleData instance not a {type(particledata)}"
+            )
 
         # set attributes
         self.inputstyle = 1
@@ -266,13 +272,13 @@ class ParticleGroup(_Modpath7ParticleGroup):
             f = fp
 
         # particle data item 1
-        f.write("{}\n".format(self.inputstyle))
+        f.write(f"{self.inputstyle}\n")
 
         # particle data item 2
-        f.write("{}\n".format(self.locationstyle))
+        f.write(f"{self.locationstyle}\n")
 
         # particle data item 3
-        f.write("{} {}\n".format(self.particlecount, self.particleidoption))
+        f.write(f"{self.particlecount} {self.particleidoption}\n")
 
         # particle data item 4 and 5
         # call the write method in ParticleData
@@ -406,7 +412,7 @@ class ParticleGroupLRCTemplate(_ParticleGroupTemplate):
             f = fp
 
         # item 1
-        f.write("{}\n".format(self.inputstyle))
+        f.write(f"{self.inputstyle}\n")
 
         # items 2, 3, 4 or 5, and 6
         self.particledata.write(f)
@@ -504,7 +510,7 @@ class ParticleGroupNodeTemplate(_ParticleGroupTemplate):
             f = fp
 
         # item 1
-        f.write("{}\n".format(self.inputstyle))
+        f.write(f"{self.inputstyle}\n")
 
         # items 2, 3, 4 or 5, and 6
         self.particledata.write(f)

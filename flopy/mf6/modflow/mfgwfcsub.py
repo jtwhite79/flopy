@@ -1,8 +1,8 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
-from ..data.mfdatautil import ListTemplateGenerator, ArrayTemplateGenerator
+from ..data.mfdatautil import ArrayTemplateGenerator, ListTemplateGenerator
 
 
 class ModflowGwfcsub(mfpackage.MFPackage):
@@ -12,7 +12,7 @@ class ModflowGwfcsub(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -119,9 +119,6 @@ class ModflowGwfcsub(mfpackage.MFPackage):
     compaction_filerecord : [compaction_filename]
         * compaction_filename (string) name of the binary output file to write
           compaction information.
-    fileout : boolean
-        * fileout (boolean) keyword to specify that an output filename is
-          expected next.
     compaction_elastic_filerecord : [elastic_compaction_filename]
         * elastic_compaction_filename (string) name of the binary output file
           to write elastic interbed compaction information.
@@ -323,6 +320,9 @@ class ModflowGwfcsub(mfpackage.MFPackage):
 
     dfn = [
         [
+            "header",
+        ],
+        [
             "block options",
             "name boundnames",
             "type keyword",
@@ -510,16 +510,6 @@ class ModflowGwfcsub(mfpackage.MFPackage):
         [
             "block options",
             "name compaction",
-            "type keyword",
-            "shape",
-            "in_record true",
-            "reader urword",
-            "tagged true",
-            "optional false",
-        ],
-        [
-            "block options",
-            "name fileout",
             "type keyword",
             "shape",
             "in_record true",
@@ -1017,7 +1007,6 @@ class ModflowGwfcsub(mfpackage.MFPackage):
         strainib_filerecord=None,
         straincg_filerecord=None,
         compaction_filerecord=None,
-        fileout=None,
         compaction_elastic_filerecord=None,
         compaction_inelastic_filerecord=None,
         compaction_interbed_filerecord=None,
@@ -1036,10 +1025,10 @@ class ModflowGwfcsub(mfpackage.MFPackage):
         stress_period_data=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "csub", filename, pname, loading_package, parent_file
+            model, "csub", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -1083,7 +1072,6 @@ class ModflowGwfcsub(mfpackage.MFPackage):
         self.compaction_filerecord = self.build_mfdata(
             "compaction_filerecord", compaction_filerecord
         )
-        self.fileout = self.build_mfdata("fileout", fileout)
         self.compaction_elastic_filerecord = self.build_mfdata(
             "compaction_elastic_filerecord", compaction_elastic_filerecord
         )

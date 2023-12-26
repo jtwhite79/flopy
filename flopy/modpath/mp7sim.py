@@ -4,11 +4,13 @@ the ModpathSim class as `flopy.modpath.ModpathSim`.
 
 Additional information for this MODFLOW/MODPATH package can be found at the
 `Online MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?dis.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/dis.html>`_.
 
 """
 from enum import Enum
+
 import numpy as np
+
 from ..pakbase import Package
 from ..utils import Util2d, Util3d
 from .mp7particlegroup import (
@@ -36,11 +38,11 @@ def sim_enum_error(v, s, e):
     -------
 
     """
-    msg = "Invalid {} ({}). Valid types are ".format(v, s)
+    msg = f"Invalid {v} ({s}). Valid types are "
     for i, c in enumerate(e):
         if i > 0:
             msg += ", "
-        msg += '"{}"'.format(c.name)
+        msg += f'"{c.name}"'
     raise ValueError(msg)
 
 
@@ -106,129 +108,129 @@ class Modpath7Sim(Package):
     """
     MODPATH Simulation File Package Class.
 
-        Parameters
-        ----------
-        model : model object
-            The model object (of type :class:`flopy.modpath.Modpath7`) to
-            which this package will be added.
-        mpnamefilename : str
-            Filename of the MODPATH 7 name file. If mpnamefilename is not
-            defined it will be generated from the model name
-            (default is None).
-        listingfilename : str
-            Filename of the MODPATH 7 listing file. If listingfilename is not
-            defined it will be generated from the model name
-            (default is None).
-        endpointfilename : str
-            Filename of the MODPATH 7 endpoint file. If endpointfilename is
-            not defined it will be generated from the model name
-            (default is None).
-        pathlinefilename : str
-            Filename of the MODPATH 7 pathline file. If pathlinefilename is
-            not defined it will be generated from the model name
-            (default is None).
-        timeseriesfilename : str
-            Filename of the MODPATH 7 timeseries file. If timeseriesfilename
-            is not defined it will be generated from the model name
-            (default is None).
-        tracefilename : str
-            Filename of the MODPATH 7 tracefile file. If tracefilename is not
-            defined it will be generated from the model name
-            (default is None).
-        simulationtype : str
-            MODPATH 7 simulation type. Valid simulation types are 'endpoint',
-            'pathline', 'timeseries', or 'combined' (default is 'pathline').
-        trackingdirection : str
-            MODPATH 7 tracking direction. Valid tracking directions are
-            'forward' or 'backward' (default os 'forward').
-        weaksinkoption : str
-            MODPATH 7 weak sink option. Valid weak sink options are
-            'pass_through' or 'stop_at' (default value is 'stop_at').
-        weaksourceoption : str
-            MODPATH 7 weak source option. Valid weak source options are
-            'pass_through' or 'stop_at' (default value is 'stop_at').
-        budgetoutputoption : str
-            MODPATH 7 budget output option. Valid budget output options are
-            'no' - individual cell water balance errors are not computed
-            and budget record headers are not printed, 'summary' - a summary
-            of individual cell water balance errors for each time step is
-            printed in the listing file without record headers, or
-            'record_summary' -  a summary of individual cell water balance
-            errors for each time step is printed in the listing file with
-            record headers (default is 'summary').
-        traceparticledata : list or tuple
-            List or tuple with two ints that define the particle group and
-            particle id (zero-based) of the specified particle that is
-            followed in detail. If traceparticledata is None, trace mode is
-            off (default is None).
-        budgetcellnumbers : int, list of ints, tuple of ints, or np.ndarray
-            Cell numbers (zero-based) for which detailed water budgets are
-            computed. If budgetcellnumbers is None, detailed water budgets are
-            not calculated (default is None).
-        referencetime : float, list, or tuple
-            Specified reference time if a float or a list/tuple with a single
-            float value is provided (reference time option 1). Otherwise a
-            list or tuple with a zero-based stress period (int) and time
-            step (int) and a float defining the relative time position in the
-            time step is provided (reference time option 2). If referencetime
-            is None, reference time is set to 0 (default is None).
-        stoptimeoption : str
-            String indicating how a particle tracking simulation is
-            terminated based on time. If stop time option is 'total', particles
-            will be stopped at the end of the final time step if 'forward'
-            tracking is simulated or at the beginning of the first time step
-            if backward tracking. If stop time option is 'extend', initial or
-            final steady-state time steps will be extended and all particles
-            will be tracked until they reach a termination location. If stop
-            time option is 'specified', particles will be tracked until they
-            reach a termination location or the specified stop time is reached
-            (default is 'extend').
-        stoptime : float
-            User-specified value of tracking time at which to stop a particle
-            tracking simulation. Stop time is only used if the stop time option
-            is 'specified'. If stoptime is None and the stop time option is
-            'specified' particles will be terminated at the end of the last
-            time step if 'forward' tracking or the beginning of the first time
-            step if 'backward' tracking (default is None).
-        timepointdata : list or tuple
-            List or tuple with 2 items that is only used if simulationtype is
-            'timeseries' or 'combined'. If the second item is a float then the
-            timepoint data corresponds to time point option 1 and the first
-            entry is the number of time points (timepointcount) and the second
-            entry is the time point interval. If the second item is a list,
-            tuple, or np.ndarray then the timepoint data corresponds to time
-            point option 2 and the number of time points entries
-            (timepointcount) in the second item and the second item is an
-            list, tuple, or array of user-defined time points. If Timepointdata
-            is None, time point option 1 is specified and the total simulation
-            time is split into 100 intervals (default is None).
-        zonedataoption : str
-            If zonedataoption is 'off', zone array data are not read and a zone
-            value of 1 is applied to all cells. If zonedataoption is 'on',
-            zone array data are read (default is 'off').
-        stopzone : int
-            A zero-based specified integer zone value that indicates an
-            automatic stopping location for particles and is only used if
-            zonedataoption is 'on'. A value of -1 indicates no automatic stop
-            zone is used.  Stopzone values less than -1 are not allowed. If
-            stopzone is None, stopzone is set to -1 (default is None).
-        zones : float or array of floats (nlay, nrow, ncol)
-            Array of zero-based positive integer zones that are only used if
-            zonedataoption is 'on' (default is 0).
-        retardationfactoroption : str
-            If retardationfactoroption is 'off', retardation array data are not
-            read and a retardation factor of 1 is applied to all cells. If
-            retardationfactoroption is 'on', retardation factor array data are
-            read (default is 'off').
-        retardation : float or array of floats (nlay, nrow, ncol)
-            Array of retardation factors that are only used if
-            retardationfactoroption is 'on' (default is 1).
-        particlegroups : ParticleGroup or list of ParticleGroups
-            ParticleGroup or list of ParticlesGroups that contain data for
-            individual particle groups. If None is specified, a
-            particle in the center of node 0 will be created (default is None).
-        extension : string
-            Filename extension (default is 'mpsim')
+    Parameters
+    ----------
+    model : model object
+        The model object (of type :class:`flopy.modpath.Modpath7`) to
+        which this package will be added.
+    mpnamefilename : str
+        Filename of the MODPATH 7 name file. If mpnamefilename is not
+        defined it will be generated from the model name
+        (default is None).
+    listingfilename : str
+        Filename of the MODPATH 7 listing file. If listingfilename is not
+        defined it will be generated from the model name
+        (default is None).
+    endpointfilename : str
+        Filename of the MODPATH 7 endpoint file. If endpointfilename is
+        not defined it will be generated from the model name
+        (default is None).
+    pathlinefilename : str
+        Filename of the MODPATH 7 pathline file. If pathlinefilename is
+        not defined it will be generated from the model name
+        (default is None).
+    timeseriesfilename : str
+        Filename of the MODPATH 7 timeseries file. If timeseriesfilename
+        is not defined it will be generated from the model name
+        (default is None).
+    tracefilename : str
+        Filename of the MODPATH 7 tracefile file. If tracefilename is not
+        defined it will be generated from the model name
+        (default is None).
+    simulationtype : str
+        MODPATH 7 simulation type. Valid simulation types are 'endpoint',
+        'pathline', 'timeseries', or 'combined' (default is 'pathline').
+    trackingdirection : str
+        MODPATH 7 tracking direction. Valid tracking directions are
+        'forward' or 'backward' (default os 'forward').
+    weaksinkoption : str
+        MODPATH 7 weak sink option. Valid weak sink options are
+        'pass_through' or 'stop_at' (default value is 'stop_at').
+    weaksourceoption : str
+        MODPATH 7 weak source option. Valid weak source options are
+        'pass_through' or 'stop_at' (default value is 'stop_at').
+    budgetoutputoption : str
+        MODPATH 7 budget output option. Valid budget output options are
+        'no' - individual cell water balance errors are not computed
+        and budget record headers are not printed, 'summary' - a summary
+        of individual cell water balance errors for each time step is
+        printed in the listing file without record headers, or
+        'record_summary' -  a summary of individual cell water balance
+        errors for each time step is printed in the listing file with
+        record headers (default is 'summary').
+    traceparticledata : list or tuple
+        List or tuple with two ints that define the particle group and
+        particle id (zero-based) of the specified particle that is
+        followed in detail. If traceparticledata is None, trace mode is
+        off (default is None).
+    budgetcellnumbers : int, list of ints, tuple of ints, or np.ndarray
+        Cell numbers (zero-based) for which detailed water budgets are
+        computed. If budgetcellnumbers is None, detailed water budgets are
+        not calculated (default is None).
+    referencetime : float, list, or tuple
+        Specified reference time if a float or a list/tuple with a single
+        float value is provided (reference time option 1). Otherwise a
+        list or tuple with a zero-based stress period (int) and time
+        step (int) and a float defining the relative time position in the
+        time step is provided (reference time option 2). If referencetime
+        is None, reference time is set to 0 (default is None).
+    stoptimeoption : str
+        String indicating how a particle tracking simulation is
+        terminated based on time. If stop time option is 'total', particles
+        will be stopped at the end of the final time step if 'forward'
+        tracking is simulated or at the beginning of the first time step
+        if backward tracking. If stop time option is 'extend', initial or
+        final steady-state time steps will be extended and all particles
+        will be tracked until they reach a termination location. If stop
+        time option is 'specified', particles will be tracked until they
+        reach a termination location or the specified stop time is reached
+        (default is 'extend').
+    stoptime : float
+        User-specified value of tracking time at which to stop a particle
+        tracking simulation. Stop time is only used if the stop time option
+        is 'specified'. If stoptime is None and the stop time option is
+        'specified' particles will be terminated at the end of the last
+        time step if 'forward' tracking or the beginning of the first time
+        step if 'backward' tracking (default is None).
+    timepointdata : list or tuple
+        List or tuple with 2 items that is only used if simulationtype is
+        'timeseries' or 'combined'. If the second item is a float then the
+        timepoint data corresponds to time point option 1 and the first
+        entry is the number of time points (timepointcount) and the second
+        entry is the time point interval. If the second item is a list,
+        tuple, or np.ndarray then the timepoint data corresponds to time
+        point option 2 and the number of time points entries
+        (timepointcount) in the second item and the second item is an
+        list, tuple, or array of user-defined time points. If Timepointdata
+        is None, time point option 1 is specified and the total simulation
+        time is split into 100 intervals (default is None).
+    zonedataoption : str
+        If zonedataoption is 'off', zone array data are not read and a zone
+        value of 1 is applied to all cells. If zonedataoption is 'on',
+        zone array data are read (default is 'off').
+    stopzone : int
+        A zero-based specified integer zone value that indicates an
+        automatic stopping location for particles and is only used if
+        zonedataoption is 'on'. A value of -1 indicates no automatic stop
+        zone is used.  Stopzone values less than -1 are not allowed. If
+        stopzone is None, stopzone is set to -1 (default is None).
+    zones : float or array of floats (nlay, nrow, ncol)
+        Array of zero-based positive integer zones that are only used if
+        zonedataoption is 'on' (default is 0).
+    retardationfactoroption : str
+        If retardationfactoroption is 'off', retardation array data are not
+        read and a retardation factor of 1 is applied to all cells. If
+        retardationfactoroption is 'on', retardation factor array data are
+        read (default is 'off').
+    retardation : float or array of floats (nlay, nrow, ncol)
+        Array of retardation factors that are only used if
+        retardationfactoroption is 'on' (default is 1).
+    particlegroups : ParticleGroup or list of ParticleGroups
+        ParticleGroup or list of ParticlesGroups that contain data for
+        individual particle groups. If None is specified, a
+        particle in the center of node 0 will be created (default is None).
+    extension : string
+        Filename extension (default is 'mpsim')
 
     Examples
     --------
@@ -268,40 +270,31 @@ class Modpath7Sim(Package):
         particlegroups=None,
         extension="mpsim",
     ):
-        """
-        Package constructor.
-
-        """
-
         unitnumber = model.next_unit()
 
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(self, model, extension, "MPSIM", unitnumber)
+        # call base package constructor
+        super().__init__(model, extension, "MPSIM", unitnumber)
 
-        self.heading = (
-            "# {} package for".format(self.name[0])
-            + " {}, ".format(model.version_types[model.version])
-            + "generated by Flopy."
-        )
+        self._generate_heading()
 
         # set file names
         if mpnamefilename is None:
-            mpnamefilename = "{}.{}".format(model.name, "mpnam")
+            mpnamefilename = f"{model.name}.mpnam"
         self.mp_name_file = mpnamefilename
         if listingfilename is None:
-            listingfilename = "{}.{}".format(model.name, "mplst")
+            listingfilename = f"{model.name}.mplst"
         self.listingfilename = listingfilename
         if endpointfilename is None:
-            endpointfilename = "{}.{}".format(model.name, "mpend")
+            endpointfilename = f"{model.name}.mpend"
         self.endpointfilename = endpointfilename
         if pathlinefilename is None:
-            pathlinefilename = "{}.{}".format(model.name, "mppth")
+            pathlinefilename = f"{model.name}.mppth"
         self.pathlinefilename = pathlinefilename
         if timeseriesfilename is None:
-            timeseriesfilename = "{}.{}".format(model.name, "timeseries")
+            timeseriesfilename = f"{model.name}.timeseries"
         self.timeseriesfilename = timeseriesfilename
         if tracefilename is None:
-            tracefilename = "{}.{}".format(model.name, "trace")
+            tracefilename = f"{model.name}.trace"
         self.tracefilename = tracefilename
 
         try:
@@ -504,6 +497,14 @@ class Modpath7Sim(Package):
         self.timepointoption = timepointoption
         self.timepointdata = timepointdata
 
+        shape = self.parent.shape
+        if len(shape) == 3:
+            shape3d = shape
+        elif len(shape) == 2:
+            shape3d = (shape[0], 1, shape[1])
+        else:
+            shape3d = (1, 1, shape[0])
+
         # zonedataoption
         try:
             self.zonedataoption = onoffOpt[zonedataoption.lower()].value
@@ -514,8 +515,7 @@ class Modpath7Sim(Package):
                 stopzone = -1
             if stopzone < -1:
                 raise ValueError(
-                    "Specified stopzone value ({}) "
-                    "must be greater than 0.".format(stopzone)
+                    f"Specified stopzone value ({stopzone}) must be greater than 0."
                 )
             self.stopzone = stopzone
             if zones is None:
@@ -524,7 +524,7 @@ class Modpath7Sim(Package):
                 )
             self.zones = Util3d(
                 model,
-                self.parent.shape,
+                shape3d,
                 np.int32,
                 zones,
                 name="zones",
@@ -548,7 +548,7 @@ class Modpath7Sim(Package):
                 )
             self.retardation = Util3d(
                 model,
-                self.parent.shape,
+                shape3d,
                 np.float32,
                 retardation,
                 name="retardation",
@@ -587,11 +587,11 @@ class Modpath7Sim(Package):
 
         f = open(self.fn_path, "w")
         # item 0
-        f.write("{}\n".format(self.heading))
+        f.write(f"{self.heading}\n")
         # item 1
-        f.write("{}\n".format(self.mp_name_file))
+        f.write(f"{self.mp_name_file}\n")
         # item 2
-        f.write("{}\n".format(self.listingfilename))
+        f.write(f"{self.listingfilename}\n")
         # item 3
         f.write(
             "{} {} {} {} {} {}\n".format(
@@ -604,23 +604,21 @@ class Modpath7Sim(Package):
             )
         )
         # item 4
-        f.write("{}\n".format(self.endpointfilename))
+        f.write(f"{self.endpointfilename}\n")
         # item 5
         if self.simulationtype == 2 or self.simulationtype == 4:
-            f.write("{}\n".format(self.pathlinefilename))
+            f.write(f"{self.pathlinefilename}\n")
         # item 6
         if self.simulationtype == 3 or self.simulationtype == 4:
-            f.write("{}\n".format(self.timeseriesfilename))
+            f.write(f"{self.timeseriesfilename}\n")
         # item 7 and 8
         if self.tracemode == 1:
-            f.write("{}\n".format(self.tracefilename))
+            f.write(f"{self.tracefilename}\n")
             f.write(
-                "{} {}\n".format(
-                    self.traceparticlegroup + 1, self.traceparticleid + 1
-                )
+                f"{self.traceparticlegroup + 1} {self.traceparticleid + 1}\n"
             )
         # item 9
-        f.write("{}\n".format(self.BudgetCellCount))
+        f.write(f"{self.BudgetCellCount}\n")
         # item 10
         if self.BudgetCellCount > 0:
             v = Util2d(
@@ -634,10 +632,10 @@ class Modpath7Sim(Package):
             f.write(v.string)
 
         # item 11
-        f.write("{}\n".format(self.referencetimeOption))
+        f.write(f"{self.referencetimeOption}\n")
         if self.referencetimeOption == 1:
             # item 12
-            f.write("{:g}\n".format(self.referencetime[0]))
+            f.write(f"{self.referencetime[0]:g}\n")
         elif self.referencetimeOption == 2:
             # item 13
             f.write(
@@ -648,24 +646,22 @@ class Modpath7Sim(Package):
                 )
             )
         # item 14
-        f.write("{}\n".format(self.stoptimeoption))
+        f.write(f"{self.stoptimeoption}\n")
         if self.stoptimeoption == 3:
             # item 15
-            f.write("{:g}\n".format(self.stoptime + 1))
+            f.write(f"{self.stoptime:g}\n")
 
         # item 16
         if self.simulationtype == 3 or self.simulationtype == 4:
-            f.write("{}\n".format(self.timepointoption))
+            f.write(f"{self.timepointoption}\n")
             if self.timepointoption == 1:
                 # item 17
                 f.write(
-                    "{} {}\n".format(
-                        self.timepointdata[0], self.timepointdata[1][0]
-                    )
+                    f"{self.timepointdata[0]} {self.timepointdata[1][0]}\n"
                 )
             elif self.timepointoption == 2:
                 # item 18
-                f.write("{}\n".format(self.timepointdata[0]))
+                f.write(f"{self.timepointdata[0]}\n")
                 # item 19
                 tp = self.timepointdata[1]
                 v = Util2d(
@@ -679,21 +675,21 @@ class Modpath7Sim(Package):
                 f.write(v.string)
 
         # item 20
-        f.write("{}\n".format(self.zonedataoption))
+        f.write(f"{self.zonedataoption}\n")
         if self.zonedataoption == 2:
             # item 21
-            f.write("{}\n".format(self.stopzone))
+            f.write(f"{self.stopzone}\n")
             # item 22
             f.write(self.zones.get_file_entry())
 
         # item 23
-        f.write("{}\n".format(self.retardationfactoroption))
+        f.write(f"{self.retardationfactoroption}\n")
         if self.retardationfactoroption == 2:
             # item 24
             f.write(self.retardation.get_file_entry())
 
         # item 25
-        f.write("{}\n".format(len(self.particlegroups)))
+        f.write(f"{len(self.particlegroups)}\n")
         for pg in self.particlegroups:
             pg.write(f, ws=self.parent.model_ws)
 

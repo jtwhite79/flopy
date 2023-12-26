@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -25,9 +25,14 @@ class ModflowTdis(mfpackage.MFPackage):
     start_date_time : string
         * start_date_time (string) is the starting date and time of the
           simulation. This is a text string that is used as a label within the
-          simulation list file. The value has no affect on the simulation. The
+          simulation list file. The value has no effect on the simulation. The
           recommended format for the starting date and time is described at
           https://www.w3.org/TR/NOTE-datetime.
+    ats_perioddata : {varname:data} or perioddata data
+        * Contains data for the ats package. Data can be stored in a dictionary
+          containing data for the ats package with variable names as keys and
+          package data as values. Data just for the ats_perioddata variable is
+          also acceptable. See ats package documentation for more information.
     nper : integer
         * nper (integer) is the number of stress periods for the simulation.
     perioddata : [perlen, nstp, tsmult]
@@ -50,12 +55,18 @@ class ModflowTdis(mfpackage.MFPackage):
 
     """
 
+    ats_filerecord = ListTemplateGenerator(
+        ("tdis", "options", "ats_filerecord")
+    )
     perioddata = ListTemplateGenerator(("tdis", "perioddata", "perioddata"))
     package_abbr = "tdis"
     _package_type = "tdis"
     dfn_file_name = "sim-tdis.dfn"
 
     dfn = [
+        [
+            "header",
+        ],
         [
             "block options",
             "name time_units",
@@ -69,6 +80,48 @@ class ModflowTdis(mfpackage.MFPackage):
             "type string",
             "reader urword",
             "optional true",
+        ],
+        [
+            "block options",
+            "name ats_filerecord",
+            "type record ats6 filein ats6_filename",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+            "construct_package ats",
+            "construct_data perioddata",
+            "parameter_name ats_perioddata",
+        ],
+        [
+            "block options",
+            "name ats6",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name filein",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name ats6_filename",
+            "type string",
+            "preserve_case true",
+            "in_record true",
+            "reader urword",
+            "optional false",
+            "tagged false",
         ],
         [
             "block dimensions",
@@ -121,20 +174,25 @@ class ModflowTdis(mfpackage.MFPackage):
         loading_package=False,
         time_units=None,
         start_date_time=None,
+        ats_perioddata=None,
         nper=1,
         perioddata=((1.0, 1, 1.0),),
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            simulation, "tdis", filename, pname, loading_package, parent_file
+            simulation, "tdis", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
         self.time_units = self.build_mfdata("time_units", time_units)
         self.start_date_time = self.build_mfdata(
             "start_date_time", start_date_time
+        )
+        self._ats_filerecord = self.build_mfdata("ats_filerecord", None)
+        self._ats_package = self.build_child_package(
+            "ats", ats_perioddata, "perioddata", self._ats_filerecord
         )
         self.nper = self.build_mfdata("nper", nper)
         self.perioddata = self.build_mfdata("perioddata", perioddata)

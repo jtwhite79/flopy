@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ArrayTemplateGenerator, ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -45,6 +45,14 @@ class ModflowGwtdisu(mfpackage.MFPackage):
           The value for ANGROT does not affect the model simulation, but it is
           written to the binary grid file so that postprocessors can locate the
           grid in space.
+    vertical_offset_tolerance : double
+        * vertical_offset_tolerance (double) checks are performed to ensure
+          that the top of a cell is not higher than the bottom of an overlying
+          cell. This option can be used to specify the tolerance that is used
+          for checking. If top of a cell is above the bottom of an overlying
+          cell by a value less than this tolerance, then the program will not
+          terminate with an error. The default value is zero. This option
+          should generally not be used.
     nodes : integer
         * nodes (integer) is the number of cells in the model grid.
     nja : integer
@@ -68,6 +76,15 @@ class ModflowGwtdisu(mfpackage.MFPackage):
         * bot (double) is the bottom elevation for each cell.
     area : [double]
         * area (double) is the cell surface area (in plan view).
+    idomain : [integer]
+        * idomain (integer) is an optional array that characterizes the
+          existence status of a cell. If the IDOMAIN array is not specified,
+          then all model cells exist within the solution. If the IDOMAIN value
+          for a cell is 0, the cell does not exist in the simulation. Input and
+          output values will be read and written for the cell, but internal to
+          the program, the cell is excluded from the solution. If the IDOMAIN
+          value for a cell is 1 or greater, the cell exists in the simulation.
+          IDOMAIN values of -1 cannot be specified for the DISU Package.
     iac : [integer]
         * iac (integer) is the number of connections (plus 1) for each cell.
           The sum of all the entries in IAC must be equal to NJA.
@@ -78,8 +95,8 @@ class ModflowGwtdisu(mfpackage.MFPackage):
           sequentially provided for the first to the last cell. The first value
           in the list must be cell n itself, and the remaining cells must be
           listed in an increasing order (sorted from lowest number to highest).
-          Note that the cell and its connections are only supplied for the GWF
-          cells and their connections to the other GWF cells. Also note that
+          Note that the cell and its connections are only supplied for the GWT
+          cells and their connections to the other GWT cells. Also note that
           the JA list input may be divided such that every node and its
           connectivity list can be on a separate line for ease in readability
           of the file. To further ease readability of the file, the node number
@@ -172,6 +189,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
     top = ArrayTemplateGenerator(("gwt6", "disu", "griddata", "top"))
     bot = ArrayTemplateGenerator(("gwt6", "disu", "griddata", "bot"))
     area = ArrayTemplateGenerator(("gwt6", "disu", "griddata", "area"))
+    idomain = ArrayTemplateGenerator(("gwt6", "disu", "griddata", "idomain"))
     iac = ArrayTemplateGenerator(("gwt6", "disu", "connectiondata", "iac"))
     ja = ArrayTemplateGenerator(("gwt6", "disu", "connectiondata", "ja"))
     ihc = ArrayTemplateGenerator(("gwt6", "disu", "connectiondata", "ihc"))
@@ -187,6 +205,9 @@ class ModflowGwtdisu(mfpackage.MFPackage):
     dfn_file_name = "gwt-disu.dfn"
 
     dfn = [
+        [
+            "header",
+        ],
         [
             "block options",
             "name length_units",
@@ -221,6 +242,15 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "type double precision",
             "reader urword",
             "optional true",
+        ],
+        [
+            "block options",
+            "name vertical_offset_tolerance",
+            "type double precision",
+            "reader urword",
+            "optional true",
+            "default_value 0.0",
+            "mf6internal voffsettol",
         ],
         [
             "block dimensions",
@@ -265,6 +295,15 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "reader readarray",
         ],
         [
+            "block griddata",
+            "name idomain",
+            "type integer",
+            "shape (nodes)",
+            "reader readarray",
+            "layered false",
+            "optional true",
+        ],
+        [
             "block connectiondata",
             "name iac",
             "type integer",
@@ -278,6 +317,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "shape (nja)",
             "reader readarray",
             "numeric_index true",
+            "jagged_array iac",
         ],
         [
             "block connectiondata",
@@ -285,6 +325,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "type integer",
             "shape (nja)",
             "reader readarray",
+            "jagged_array iac",
         ],
         [
             "block connectiondata",
@@ -292,6 +333,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "type double precision",
             "shape (nja)",
             "reader readarray",
+            "jagged_array iac",
         ],
         [
             "block connectiondata",
@@ -299,6 +341,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "type double precision",
             "shape (nja)",
             "reader readarray",
+            "jagged_array iac",
         ],
         [
             "block connectiondata",
@@ -307,11 +350,13 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "optional true",
             "shape (nja)",
             "reader readarray",
+            "jagged_array iac",
         ],
         [
             "block vertices",
             "name vertices",
             "type recarray iv xv yv",
+            "shape (nvert)",
             "reader urword",
             "optional false",
         ],
@@ -347,6 +392,7 @@ class ModflowGwtdisu(mfpackage.MFPackage):
             "block cell2d",
             "name cell2d",
             "type recarray icell2d xc yc ncvert icvert",
+            "shape (nodes)",
             "reader urword",
             "optional false",
         ],
@@ -409,12 +455,14 @@ class ModflowGwtdisu(mfpackage.MFPackage):
         xorigin=None,
         yorigin=None,
         angrot=None,
+        vertical_offset_tolerance=0.0,
         nodes=None,
         nja=None,
         nvert=None,
         top=None,
         bot=None,
         area=None,
+        idomain=None,
         iac=None,
         ja=None,
         ihc=None,
@@ -425,10 +473,10 @@ class ModflowGwtdisu(mfpackage.MFPackage):
         cell2d=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "disu", filename, pname, loading_package, parent_file
+            model, "disu", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -437,12 +485,16 @@ class ModflowGwtdisu(mfpackage.MFPackage):
         self.xorigin = self.build_mfdata("xorigin", xorigin)
         self.yorigin = self.build_mfdata("yorigin", yorigin)
         self.angrot = self.build_mfdata("angrot", angrot)
+        self.vertical_offset_tolerance = self.build_mfdata(
+            "vertical_offset_tolerance", vertical_offset_tolerance
+        )
         self.nodes = self.build_mfdata("nodes", nodes)
         self.nja = self.build_mfdata("nja", nja)
         self.nvert = self.build_mfdata("nvert", nvert)
         self.top = self.build_mfdata("top", top)
         self.bot = self.build_mfdata("bot", bot)
         self.area = self.build_mfdata("area", area)
+        self.idomain = self.build_mfdata("idomain", idomain)
         self.iac = self.build_mfdata("iac", iac)
         self.ja = self.build_mfdata("ja", ja)
         self.ihc = self.build_mfdata("ihc", ihc)

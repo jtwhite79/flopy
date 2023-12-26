@@ -1,7 +1,12 @@
-import os
 import copy
+import os
+from typing import Union
+
 import numpy as np
-from .grid import Grid, CachedData
+from matplotlib.path import Path
+
+from ..utils.geometry import is_clockwise, transform
+from .grid import CachedData, Grid
 
 
 class UnstructuredGrid(Grid):
@@ -26,6 +31,14 @@ class UnstructuredGrid(Grid):
         list of y center coordinates for all cells in the grid if the grid
         varies by layer or for all cells in a layer if the same grid is used
         for all layers
+    top : list or ndarray
+        top elevations for all cells in the grid.
+    botm : list or ndarray
+        bottom elevations for all cells in the grid.
+    idomain : int or ndarray
+        ibound/idomain value for each cell
+    lenuni : int or ndarray
+        model length units
     ncpl : ndarray
         one dimensional array of size nlay with the number of cells in each
         layer.  This can also be passed in as a tuple or list as long as it
@@ -37,11 +50,37 @@ class UnstructuredGrid(Grid):
         If the model grid defined in verts and iverts applies for all model
         layers, then the length of iverts can be equal to ncpl[0] and there
         is no need to repeat all of the vertex information for cells in layers
+    crs : pyproj.CRS, int, str, optional if `prjfile` is specified
+        Coordinate reference system (CRS) for the model grid
+        (must be projected; geographic CRS are not supported).
+        The value can be anything accepted by
+        :meth:`pyproj.CRS.from_user_input() <pyproj.crs.CRS.from_user_input>`,
+        such as an authority string (eg "EPSG:26916") or a WKT string.
+    prjfile : str or pathlike, optional if `crs` is specified
+        ESRI-style projection file with well-known text defining the CRS
+        for the model grid (must be projected; geographic CRS are not supported).
         beneath the top layer.
-    top : list or ndarray
-        top elevations for all cells in the grid.
-    botm : list or ndarray
-        bottom elevations for all cells in the grid.
+    xoff : float
+        x coordinate of the origin point (lower left corner of model grid)
+        in the spatial reference coordinate system
+    yoff : float
+        y coordinate of the origin point (lower left corner of model grid)
+        in the spatial reference coordinate system
+    angrot : float
+        rotation angle of model grid, as it is rotated around the origin point
+    iac : list or ndarray
+        optional number of connections per node array
+    ja : list or ndarray
+        optional jagged connection array
+    **kwargs : dict, optional
+        Support deprecated keyword options.
+
+        .. deprecated:: 3.5
+           The following keyword options will be removed for FloPy 3.6:
+
+             - ``prj`` (str or pathlike): use ``prjfile`` instead.
+             - ``epsg`` (int): use ``crs`` instead.
+             - ``proj4`` (str): use ``crs`` instead.
 
     Properties
     ----------
@@ -85,25 +124,27 @@ class UnstructuredGrid(Grid):
         idomain=None,
         lenuni=None,
         ncpl=None,
-        epsg=None,
-        proj4=None,
-        prj=None,
+        crs=None,
+        prjfile=None,
         xoff=0.0,
         yoff=0.0,
         angrot=0.0,
+        iac=None,
+        ja=None,
+        **kwargs,
     ):
         super().__init__(
             "unstructured",
-            top,
-            botm,
-            idomain,
-            lenuni,
-            epsg,
-            proj4,
-            prj,
-            xoff,
-            yoff,
-            angrot,
+            top=top,
+            botm=botm,
+            idomain=idomain,
+            lenuni=lenuni,
+            crs=crs,
+            prjfile=prjfile,
+            xoff=xoff,
+            yoff=yoff,
+            angrot=angrot,
+            **kwargs,
         )
 
         # if any of these are None, then the grid is not valid
@@ -128,17 +169,17 @@ class UnstructuredGrid(Grid):
 
         if iverts is not None:
             if self.grid_varies_by_layer:
-                msg = "Length of iverts must equal grid nodes ({} {})".format(
-                    len(iverts), self.nnodes
+                msg = (
+                    "Length of iverts must equal grid nodes "
+                    f"({len(iverts)} {self.nnodes})"
                 )
                 assert len(iverts) == self.nnodes, msg
             else:
-                msg = "Length of iverts must equal ncpl ({} {})".format(
-                    len(iverts), self.ncpl
-                )
+                msg = f"Length of iverts must equal ncpl ({len(iverts)} {self.ncpl})"
                 assert np.all([cpl == len(iverts) for cpl in self.ncpl]), msg
 
-        return
+        self._iac = iac
+        self._ja = ja
 
     def set_ncpl(self, ncpl):
         if isinstance(ncpl, int):
@@ -150,7 +191,6 @@ class UnstructuredGrid(Grid):
         assert ncpl.ndim == 1, "ncpl must be 1d"
         self._ncpl = ncpl
         self._require_cache_updates()
-        return
 
     @property
     def is_valid(self):
@@ -201,25 +241,34 @@ class UnstructuredGrid(Grid):
 
     @property
     def iverts(self):
-        return self._iverts
+        if self._iverts is not None:
+            return [
+                [ivt for ivt in t if ivt is not None] for t in self._iverts
+            ]
 
     @property
     def verts(self):
         if self._vertices is None:
             return self._vertices
         else:
-            return np.array([t[1:] for t in self._vertices], dtype=float)
+            verts = np.array(
+                [list(t)[1:] for t in self._vertices], dtype=float
+            ).T
+            x, y = transform(
+                verts[0],
+                verts[1],
+                self.xoffset,
+                self.yoffset,
+                self.angrot_radians,
+            )
+            return np.array(list(zip(x, y)))
 
     @property
-    def ia(self):
-        if self._ia is None:
-            self._set_unstructured_iaja()
-        return self._ia
+    def iac(self):
+        return self._iac
 
     @property
     def ja(self):
-        if self._ja is None:
-            self._set_unstructured_iaja()
         return self._ja
 
     @property
@@ -472,10 +521,7 @@ class UnstructuredGrid(Grid):
         -------
             list or dict of matplotlib.collections.Polygon
         """
-        try:
-            from matplotlib.path import Path
-        except ImportError:
-            raise ImportError("matplotlib required to use this method")
+        from matplotlib.path import Path
 
         cache_index = "xyzgrid"
         if (
@@ -507,9 +553,74 @@ class UnstructuredGrid(Grid):
 
         return copy.copy(self._polygons)
 
-    def intersect(self, x, y, local=False, forgive=False):
-        x, y = super().intersect(x, y, local, forgive)
-        raise Exception("Not implemented yet")
+    def intersect(self, x, y, z=None, local=False, forgive=False):
+        """
+        Get the CELL2D number of a point with coordinates x and y
+
+        When the point is on the edge of two cells, the cell with the lowest
+        CELL2D number is returned.
+
+        Parameters
+        ----------
+        x : float
+            The x-coordinate of the requested point
+        y : float
+            The y-coordinate of the requested point
+        z : float, None
+            optional, z-coordiante of the requested point
+        local: bool (optional)
+            If True, x and y are in local coordinates (defaults to False)
+        forgive: bool (optional)
+            Forgive x,y arguments that fall outside the model grid and
+            return NaNs instead (defaults to False - will throw exception)
+
+        Returns
+        -------
+        icell2d : int
+            The CELL2D number
+
+        """
+        if local:
+            # transform x and y to real-world coordinates
+            x, y = super().get_coords(x, y)
+        xv, yv, zv = self.xyzvertices
+
+        if self.grid_varies_by_layer:
+            ncpl = self.nnodes
+        else:
+            ncpl = self.ncpl[0]
+
+        for icell2d in range(ncpl):
+            xa = np.array(xv[icell2d])
+            ya = np.array(yv[icell2d])
+            # x and y at least have to be within the bounding box of the cell
+            if (
+                np.any(x <= xa)
+                and np.any(x >= xa)
+                and np.any(y <= ya)
+                and np.any(y >= ya)
+            ):
+                if is_clockwise(xa, ya):
+                    radius = -1e-9
+                else:
+                    radius = 1e-9
+                path = Path(np.stack((xa, ya)).transpose())
+                # use a small radius, so that the edge of the cell is included
+                if path.contains_point((x, y), radius=radius):
+                    if z is None:
+                        return icell2d
+
+                    for lay in range(self.nlay):
+                        if lay != 0 and not self.grid_varies_by_layer:
+                            icell2d += self.ncpl[lay - 1]
+                        if zv[0, icell2d] >= z >= zv[1, icell2d]:
+                            return icell2d
+
+        if forgive:
+            icell2d = np.nan
+            return icell2d
+
+        raise Exception("point given is outside of the model area")
 
     @property
     def top_botm(self):
@@ -544,7 +655,7 @@ class UnstructuredGrid(Grid):
         lc : matplotlib.collections.LineCollection
 
         """
-        from flopy.plot import PlotMapView
+        from ..plot import PlotMapView
 
         layer = 0
         if "layer" in kwargs:
@@ -563,8 +674,7 @@ class UnstructuredGrid(Grid):
         yvertices = []
 
         # build xy vertex and cell center info
-        for iverts in self._iverts:
-
+        for iverts in self.iverts:
             xcellvert = []
             ycellvert = []
             for ix in iverts:
@@ -684,63 +794,6 @@ class UnstructuredGrid(Grid):
             shp = (self.ncpl[layer],)
         return shp
 
-    @classmethod
-    def from_argus_export(cls, fname, nlay=1):
-        """
-        Create a new UnstructuredGrid from an Argus One Trimesh file
-
-        Parameters
-        ----------
-        fname : string
-            File name
-
-        nlay : int
-            Number of layers to create
-
-        Returns
-        -------
-        flopy.discretization.unstructuredgrid.UnstructuredGrid
-
-        """
-        from ..utils.geometry import get_polygon_centroid
-
-        f = open(fname, "r")
-        line = f.readline()
-        ll = line.split()
-        ncells, nverts = ll[0:2]
-        ncells = int(ncells)
-        nverts = int(nverts)
-        verts = np.empty((nverts, 3), dtype=float)
-        xc = np.empty((ncells), dtype=float)
-        yc = np.empty((ncells), dtype=float)
-
-        # read the vertices
-        f.readline()
-        for ivert in range(nverts):
-            line = f.readline()
-            ll = line.split()
-            c, iv, x, y = ll[0:4]
-            verts[ivert, 0] = int(iv) - 1
-            verts[ivert, 1] = x
-            verts[ivert, 2] = y
-
-        # read the cell information and create iverts, xc, and yc
-        iverts = []
-        for icell in range(ncells):
-            line = f.readline()
-            ll = line.split()
-            ivlist = []
-            for ic in ll[2:5]:
-                ivlist.append(int(ic) - 1)
-            if ivlist[0] != ivlist[-1]:
-                ivlist.append(ivlist[0])
-            iverts.append(ivlist)
-            xc[icell], yc[icell] = get_polygon_centroid(verts[ivlist, 1:])
-
-        # close file and return spatial reference
-        f.close()
-        return cls(verts, iverts, xc, yc, ncpl=np.array(nlay * [len(iverts)]))
-
     @staticmethod
     def ncpl_from_ihc(ihc, iac):
         """
@@ -765,7 +818,7 @@ class UnstructuredGrid(Grid):
             number of cells per plottable layer
 
         """
-        from flopy.utils.gridgen import get_ia_from_iac
+        from ..utils.gridgen import get_ia_from_iac
 
         valid = False
         ia = get_ia_from_iac(iac)
@@ -786,7 +839,63 @@ class UnstructuredGrid(Grid):
             ncpl = None
         return ncpl
 
-    # initialize grid from a grb file
+    # Importing
+
+    @classmethod
+    def from_argus_export(cls, file_path, nlay=1):
+        """
+        Create a new UnstructuredGrid from an Argus One Trimesh file
+
+        Parameters
+        ----------
+        file_path : Path-like
+            Path to trimesh file
+
+        nlay : int
+            Number of layers to create
+
+        Returns
+        -------
+            An UnstructuredGrid
+        """
+
+        from ..utils.geometry import get_polygon_centroid
+
+        with open(file_path) as f:
+            line = f.readline()
+            ll = line.split()
+            ncells, nverts = ll[0:2]
+            ncells = int(ncells)
+            nverts = int(nverts)
+            verts = np.empty((nverts, 3), dtype=float)
+            xc = np.empty((ncells), dtype=float)
+            yc = np.empty((ncells), dtype=float)
+
+            # read the vertices
+            f.readline()
+            for ivert in range(nverts):
+                line = f.readline()
+                ll = line.split()
+                c, iv, x, y = ll[0:4]
+                verts[ivert, 0] = int(iv) - 1
+                verts[ivert, 1] = x
+                verts[ivert, 2] = y
+
+            # read the cell information and create iverts, xc, and yc
+            iverts = []
+            for icell in range(ncells):
+                line = f.readline()
+                ll = line.split()
+                ivlist = []
+                for ic in ll[2:5]:
+                    ivlist.append(int(ic) - 1)
+                if ivlist[0] != ivlist[-1]:
+                    ivlist.append(ivlist[0])
+                iverts.append(ivlist)
+                xc[icell], yc[icell] = get_polygon_centroid(verts[ivlist, 1:])
+
+        return cls(verts, iverts, xc, yc, ncpl=np.array(nlay * [len(iverts)]))
+
     @classmethod
     def from_binary_grid_file(cls, file_path, verbose=False):
         """
@@ -809,11 +918,10 @@ class UnstructuredGrid(Grid):
 
         grb_obj = MfGrdFile(file_path, verbose=verbose)
         if grb_obj.grid_type != "DISU":
-            err_msg = (
-                "Binary grid file ({}) ".format(os.path.basename(file_path))
-                + "is not a vertex (DISU) grid."
+            raise ValueError(
+                f"Binary grid file ({os.path.basename(file_path)}) "
+                "is not a vertex (DISU) grid."
             )
-            raise ValueError(err_msg)
 
         iverts = grb_obj.iverts
         if iverts is not None:
@@ -842,8 +950,93 @@ class UnstructuredGrid(Grid):
                 angrot=angrot,
             )
         else:
-            err_msg = (
-                "{} binary grid file".format(os.path.basename(file_path))
-                + " does not include vertex data"
+            raise TypeError(
+                f"{os.path.basename(file_path)} binary grid file "
+                "does not include vertex data"
             )
-            raise TypeError(err_msg)
+
+    @classmethod
+    def from_gridspec(cls, file_path: Union[str, os.PathLike]):
+        """
+        Create an UnstructuredGrid from a grid specification file.
+
+        Parameters
+        ----------
+        file_path : str or PathLike
+            Path to the grid specification file
+
+        Returns
+        -------
+            An UnstructuredGrid
+        """
+
+        with open(file_path) as file:
+
+            def split_line():
+                return file.readline().strip().split()
+
+            header = split_line()
+            if not (len(header) == 1 and header[0] == "UNSTRUCTURED") or (
+                len(header) == 2 and header == ["UNSTRUCTURED", "GWF"]
+            ):
+                raise ValueError(f"Invalid GSF file, no header")
+
+            nnodes = int(split_line()[0])
+            verts_declared = int(split_line()[0])
+
+            vertices = []
+            zverts = []
+
+            for i in range(verts_declared):
+                x, y, z = split_line()
+                vertices.append([i, float(x), float(y)])
+                zverts.append(float(z))
+
+            iverts = []
+            xcenters = []
+            ycenters = []
+            layers = []
+            top = []
+            bot = []
+
+            for nn in range(nnodes):
+                line = split_line()
+
+                xc = float(line[1])
+                yc = float(line[2])
+                lay = float(line[4])
+
+                # make sure number of vertices provided and declared are equal
+                verts_declared = int(line[5])
+                verts_provided = len(line) - 6
+                if verts_declared != verts_provided:
+                    raise ValueError(
+                        f"Cell {nn} declares {verts_declared} vertices but provides {verts_provided}"
+                    )
+
+                verts = [
+                    int(vert) - 1 for vert in line[6 : 6 + verts_declared]
+                ]
+                elevs = [
+                    zverts[int(line[i]) - 1]
+                    for i in range(6, 6 + verts_declared)
+                ]
+
+                xcenters.append(xc)
+                ycenters.append(yc)
+                layers.append(lay)
+                iverts.append(verts)
+                top.append(max(elevs))
+                bot.append(min(elevs))
+
+            _, ncpl = np.unique(layers, return_counts=True)
+
+            return cls(
+                vertices=vertices,
+                iverts=iverts,
+                xcenters=np.array(xcenters),
+                ycenters=np.array(ycenters),
+                ncpl=ncpl,
+                top=np.array(top),
+                botm=np.array(bot),
+            )

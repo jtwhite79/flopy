@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwflak(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -59,6 +59,10 @@ class ModflowGwflak(mfpackage.MFPackage):
     budget_filerecord : [budgetfile]
         * budgetfile (string) name of the binary output file to write budget
           information.
+    budgetcsv_filerecord : [budgetcsvfile]
+        * budgetcsvfile (string) name of the comma-separated value (CSV) output
+          file to write budget summary information. A budget summary record
+          will be written to this file for each time step of the simulation.
     package_convergence_filerecord : [package_convergence_filename]
         * package_convergence_filename (string) name of the comma spaced values
           output file to write package convergence information.
@@ -82,22 +86,37 @@ class ModflowGwflak(mfpackage.MFPackage):
           for VERTICAL lake-GWF connections. If specified, SURFDEP must be
           greater than or equal to zero. If SURFDEP is not specified, a default
           value of zero is used for all vertical lake-GWF connections.
+    maximum_iterations : integer
+        * maximum_iterations (integer) integer value that defines the maximum
+          number of Newton-Raphson iterations allowed for a lake. By default,
+          MAXIMUM_ITERATIONS is equal to 100. MAXIMUM_ITERATIONS would only
+          need to be increased from the default value if one or more lakes in a
+          simulation has a large water budget error.
+    maximum_stage_change : double
+        * maximum_stage_change (double) real value that defines the lake stage
+          closure tolerance. By default, MAXIMUM_STAGE_CHANGE is equal to
+          :math:`1 \\times 10^{-5}`. The MAXIMUM_STAGE_CHANGE would only need
+          to be increased or decreased from the default value if the water
+          budget error for one or more lakes is too small or too large,
+          respectively.
     time_conversion : double
-        * time_conversion (double) value that is used in converting outlet flow
-          terms that use Manning's equation or gravitational acceleration to
-          consistent time units. TIME_CONVERSION should be set to 1.0, 60.0,
-          3,600.0, 86,400.0, and 31,557,600.0 when using time units
-          (TIME_UNITS) of seconds, minutes, hours, days, or years in the
-          simulation, respectively. CONVTIME does not need to be specified if
-          no lake outlets are specified or TIME_UNITS are seconds.
+        * time_conversion (double) real value that is used to convert user-
+          specified Manning's roughness coefficients or gravitational
+          acceleration used to calculate outlet flows from seconds to model
+          time units. TIME_CONVERSION should be set to 1.0, 60.0, 3,600.0,
+          86,400.0, and 31,557,600.0 when using time units (TIME_UNITS) of
+          seconds, minutes, hours, days, or years in the simulation,
+          respectively. CONVTIME does not need to be specified if no lake
+          outlets are specified or TIME_UNITS are seconds.
     length_conversion : double
-        * length_conversion (double) real value that is used in converting
-          outlet flow terms that use Manning's equation or gravitational
-          acceleration to consistent length units. LENGTH_CONVERSION should be
-          set to 3.28081, 1.0, and 100.0 when using length units (LENGTH_UNITS)
-          of feet, meters, or centimeters in the simulation, respectively.
-          LENGTH_CONVERSION does not need to be specified if no lake outlets
-          are specified or LENGTH_UNITS are meters.
+        * length_conversion (double) real value that is used to convert outlet
+          user-specified Manning's roughness coefficients or gravitational
+          acceleration used to calculate outlet flows from meters to model
+          length units. LENGTH_CONVERSION should be set to 3.28081, 1.0, and
+          100.0 when using length units (LENGTH_UNITS) of feet, meters, or
+          centimeters in the simulation, respectively. LENGTH_CONVERSION does
+          not need to be specified if no lake outlets are specified or
+          LENGTH_UNITS are meters.
     nlakes : integer
         * nlakes (integer) value specifying the number of lakes that will be
           simulated for all stress periods.
@@ -109,10 +128,10 @@ class ModflowGwflak(mfpackage.MFPackage):
         * ntables (integer) value specifying the number of lakes tables that
           will be used to define the lake stage, volume relation, and surface
           area. If NTABLES is not specified, a default value of zero is used.
-    packagedata : [lakeno, strt, nlakeconn, aux, boundname]
-        * lakeno (integer) integer value that defines the lake number
-          associated with the specified PACKAGEDATA data on the line. LAKENO
-          must be greater than zero and less than or equal to NLAKES. Lake
+    packagedata : [ifno, strt, nlakeconn, aux, boundname]
+        * ifno (integer) integer value that defines the feature (lake) number
+          associated with the specified PACKAGEDATA data on the line. IFNO must
+          be greater than zero and less than or equal to NLAKES. Lake
           information must be specified for every lake or the program will
           terminate with an error. The program will also terminate with an
           error if information for a lake is specified more than once. This
@@ -123,7 +142,7 @@ class ModflowGwflak(mfpackage.MFPackage):
         * strt (double) real value that defines the starting stage for the
           lake.
         * nlakeconn (integer) integer value that defines the number of GWF
-          cells connected to this (LAKENO) lake. There can only be one vertical
+          cells connected to this (IFNO) lake. There can only be one vertical
           lake connection to each GWF cell. NLAKECONN must be greater than
           zero.
         * aux (double) represents the values of the auxiliary variables for
@@ -138,10 +157,10 @@ class ModflowGwflak(mfpackage.MFPackage):
           character variable that can contain as many as 40 characters. If
           BOUNDNAME contains spaces in it, then the entire name must be
           enclosed within single quotes.
-    connectiondata : [lakeno, iconn, cellid, claktype, bedleak, belev, telev,
+    connectiondata : [ifno, iconn, cellid, claktype, bedleak, belev, telev,
       connlen, connwidth]
-        * lakeno (integer) integer value that defines the lake number
-          associated with the specified CONNECTIONDATA data on the line. LAKENO
+        * ifno (integer) integer value that defines the feature (lake) number
+          associated with the specified CONNECTIONDATA data on the line. IFNO
           must be greater than zero and less than or equal to NLAKES. Lake
           connection information must be specified for every lake connection to
           the GWF model (NLAKECONN) or the program will terminate with an
@@ -153,7 +172,7 @@ class ModflowGwflak(mfpackage.MFPackage):
           and add one when writing index variables.
         * iconn (integer) integer value that defines the GWF connection number
           for this lake connection entry. ICONN must be greater than zero and
-          less than or equal to NLAKECONN for lake LAKENO. This argument is an
+          less than or equal to NLAKECONN for lake IFNO. This argument is an
           index variable, which means that it should be treated as zero-based
           when working with FloPy and Python. Flopy will automatically subtract
           one when loading index variables and add one when writing index
@@ -188,12 +207,15 @@ class ModflowGwflak(mfpackage.MFPackage):
           CELLID in the NPF package. Embedded lakes can only be connected to a
           single cell (NLAKECONN = 1) and there must be a lake table associated
           with each embedded lake.
-        * bedleak (double) character string or real value that defines the bed
+        * bedleak (string) real value or character string that defines the bed
           leakance for the lake-GWF connection. BEDLEAK must be greater than or
-          equal to zero or specified to be NONE. If BEDLEAK is specified to be
-          NONE, the lake-GWF connection conductance is solely a function of
-          aquifer properties in the connected GWF cell and lakebed sediments
-          are assumed to be absent.
+          equal to zero, equal to the DNODATA value (3.0E+30), or specified to
+          be NONE. If DNODATA or NONE is specified for BEDLEAK, the lake-GWF
+          connection conductance is solely a function of aquifer properties in
+          the connected GWF cell and lakebed sediments are assumed to be
+          absent. Warning messages will be issued if NONE is specified.
+          Eventually the ability to specify NONE will be deprecated and cause
+          MODFLOW 6 to terminate with an error.
         * belev (double) real value that defines the bottom elevation for a
           HORIZONTAL lake-GWF connection. Any value can be specified if
           CLAKTYPE is VERTICAL, EMBEDDEDH, or EMBEDDEDV. If CLAKTYPE is
@@ -215,9 +237,9 @@ class ModflowGwflak(mfpackage.MFPackage):
           for a HORIZONTAL lake-GWF connection. CONNWIDTH must be greater than
           zero for a HORIZONTAL lake-GWF connection. Any value can be specified
           if CLAKTYPE is VERTICAL, EMBEDDEDH, or EMBEDDEDV.
-    tables : [lakeno, tab6_filename]
-        * lakeno (integer) integer value that defines the lake number
-          associated with the specified TABLES data on the line. LAKENO must be
+    tables : [ifno, tab6_filename]
+        * ifno (integer) integer value that defines the feature (lake) number
+          associated with the specified TABLES data on the line. IFNO must be
           greater than zero and less than or equal to NLAKES. The program will
           terminate with an error if table information for a lake is specified
           more than once or the number of specified tables is less than
@@ -354,13 +376,13 @@ class ModflowGwflak(mfpackage.MFPackage):
                 * rate (string) real or character value that defines the
                   extraction rate for the lake outflow. A positive value
                   indicates inflow and a negative value indicates outflow from
-                  the lake. RATE only applies to active (IBOUND > 0) lakes. A
-                  specified RATE is only applied if COUTTYPE for the OUTLETNO
-                  is SPECIFIED. If the Options block includes a TIMESERIESFILE
-                  entry (see the "Time-Variable Input" section), values can be
-                  obtained from a time series by entering the time-series name
-                  in place of a numeric value. By default, the RATE for each
-                  SPECIFIED lake outlet is zero.
+                  the lake. RATE only applies to outlets associated with active
+                  lakes (STATUS is ACTIVE). A specified RATE is only applied if
+                  COUTTYPE for the OUTLETNO is SPECIFIED. If the Options block
+                  includes a TIMESERIESFILE entry (see the "Time-Variable
+                  Input" section), values can be obtained from a time series by
+                  entering the time-series name in place of a numeric value. By
+                  default, the RATE for each SPECIFIED lake outlet is zero.
             invert : [string]
                 * invert (string) real or character value that defines the
                   invert elevation for the lake outlet. A specified INVERT
@@ -421,6 +443,9 @@ class ModflowGwflak(mfpackage.MFPackage):
     budget_filerecord = ListTemplateGenerator(
         ("gwf6", "lak", "options", "budget_filerecord")
     )
+    budgetcsv_filerecord = ListTemplateGenerator(
+        ("gwf6", "lak", "options", "budgetcsv_filerecord")
+    )
     package_convergence_filerecord = ListTemplateGenerator(
         ("gwf6", "lak", "options", "package_convergence_filerecord")
     )
@@ -444,6 +469,7 @@ class ModflowGwflak(mfpackage.MFPackage):
     dfn_file_name = "gwf-lak.dfn"
 
     dfn = [
+        ["header", "multi-package", "package-type advanced-stress-package"],
         [
             "block options",
             "name auxiliary",
@@ -550,6 +576,36 @@ class ModflowGwflak(mfpackage.MFPackage):
         [
             "block options",
             "name budgetfile",
+            "type string",
+            "preserve_case true",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged false",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name budgetcsv_filerecord",
+            "type record budgetcsv fileout budgetcsvfile",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name budgetcsv",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name budgetcsvfile",
             "type string",
             "preserve_case true",
             "shape",
@@ -679,6 +735,20 @@ class ModflowGwflak(mfpackage.MFPackage):
         ],
         [
             "block options",
+            "name maximum_iterations",
+            "type integer",
+            "reader urword",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name maximum_stage_change",
+            "type double precision",
+            "reader urword",
+            "optional true",
+        ],
+        [
+            "block options",
             "name time_conversion",
             "type double precision",
             "reader urword",
@@ -715,13 +785,13 @@ class ModflowGwflak(mfpackage.MFPackage):
         [
             "block packagedata",
             "name packagedata",
-            "type recarray lakeno strt nlakeconn aux boundname",
+            "type recarray ifno strt nlakeconn aux boundname",
             "shape (maxbound)",
             "reader urword",
         ],
         [
             "block packagedata",
-            "name lakeno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -771,14 +841,14 @@ class ModflowGwflak(mfpackage.MFPackage):
         [
             "block connectiondata",
             "name connectiondata",
-            "type recarray lakeno iconn cellid claktype bedleak belev telev "
+            "type recarray ifno iconn cellid claktype bedleak belev telev "
             "connlen connwidth",
             "shape (sum(nlakeconn))",
             "reader urword",
         ],
         [
             "block connectiondata",
-            "name lakeno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -817,7 +887,7 @@ class ModflowGwflak(mfpackage.MFPackage):
         [
             "block connectiondata",
             "name bedleak",
-            "type double precision",
+            "type string",
             "shape",
             "tagged false",
             "in_record true",
@@ -862,13 +932,13 @@ class ModflowGwflak(mfpackage.MFPackage):
         [
             "block tables",
             "name tables",
-            "type recarray lakeno tab6 filein tab6_filename",
+            "type recarray ifno tab6 filein tab6_filename",
             "shape (ntables)",
             "reader urword",
         ],
         [
             "block tables",
-            "name lakeno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -1201,11 +1271,14 @@ class ModflowGwflak(mfpackage.MFPackage):
         save_flows=None,
         stage_filerecord=None,
         budget_filerecord=None,
+        budgetcsv_filerecord=None,
         package_convergence_filerecord=None,
         timeseries=None,
         observations=None,
         mover=None,
         surfdep=None,
+        maximum_iterations=None,
+        maximum_stage_change=None,
         time_conversion=None,
         length_conversion=None,
         nlakes=None,
@@ -1218,10 +1291,10 @@ class ModflowGwflak(mfpackage.MFPackage):
         perioddata=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "lak", filename, pname, loading_package, parent_file
+            model, "lak", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -1237,6 +1310,9 @@ class ModflowGwflak(mfpackage.MFPackage):
         self.budget_filerecord = self.build_mfdata(
             "budget_filerecord", budget_filerecord
         )
+        self.budgetcsv_filerecord = self.build_mfdata(
+            "budgetcsv_filerecord", budgetcsv_filerecord
+        )
         self.package_convergence_filerecord = self.build_mfdata(
             "package_convergence_filerecord", package_convergence_filerecord
         )
@@ -1250,6 +1326,12 @@ class ModflowGwflak(mfpackage.MFPackage):
         )
         self.mover = self.build_mfdata("mover", mover)
         self.surfdep = self.build_mfdata("surfdep", surfdep)
+        self.maximum_iterations = self.build_mfdata(
+            "maximum_iterations", maximum_iterations
+        )
+        self.maximum_stage_change = self.build_mfdata(
+            "maximum_stage_change", maximum_stage_change
+        )
         self.time_conversion = self.build_mfdata(
             "time_conversion", time_conversion
         )

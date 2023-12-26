@@ -1,36 +1,10 @@
 import copy
 import os.path
+from typing import Union
 
 import numpy as np
-from .grid import Grid, CachedData
 
-try:
-    from numpy.lib import NumpyVersion
-
-    numpy115 = NumpyVersion(np.__version__) >= "1.15.0"
-except ImportError:
-    numpy115 = False
-
-if not numpy115:
-
-    def flip_numpy115(m, axis=None):
-        """Provide same behavior for np.flip since numpy 1.15.0."""
-        import numpy.core.numeric as _nx
-        from numpy.core.numeric import asarray
-
-        if not hasattr(m, "ndim"):
-            m = asarray(m)
-        if axis is None:
-            indexer = (np.s_[::-1],) * m.ndim
-        else:
-            axis = _nx.normalize_axis_tuple(axis, m.ndim)
-            indexer = [np.s_[:]] * m.ndim
-            for ax in axis:
-                indexer[ax] = np.s_[::-1]
-            indexer = tuple(indexer)
-        return m[indexer]
-
-    np.flip = flip_numpy115
+from .grid import CachedData, Grid
 
 
 def array_at_verts_basic2d(a):
@@ -110,10 +84,44 @@ class StructuredGrid(Grid):
 
     Parameters
     ----------
-    delc
-        delc array
-    delr
-        delr array
+    delr : float or ndarray
+        column spacing along a row.
+    delc : float or ndarray
+        row spacing along a column.
+    top : float or ndarray
+        top elevations of cells in topmost layer
+    botm : float or ndarray
+        bottom elevations of all cells
+    idomain : int or ndarray
+        ibound/idomain value for each cell
+    lenuni : int or ndarray
+        model length units
+    crs : pyproj.CRS, int, str, optional if `prjfile` is specified
+        Coordinate reference system (CRS) for the model grid
+        (must be projected; geographic CRS are not supported).
+        The value can be anything accepted by
+        :meth:`pyproj.CRS.from_user_input() <pyproj.crs.CRS.from_user_input>`,
+        such as an authority string (eg "EPSG:26916") or a WKT string.
+    prjfile : str or pathlike, optional if `crs` is specified
+        ESRI-style projection file with well-known text defining the CRS
+        for the model grid (must be projected; geographic CRS are not supported).
+    xoff : float
+        x coordinate of the origin point (lower left corner of model grid)
+        in the spatial reference coordinate system
+    yoff : float
+        y coordinate of the origin point (lower left corner of model grid)
+        in the spatial reference coordinate system
+    angrot : float
+        rotation angle of model grid, as it is rotated around the origin point
+    **kwargs : dict, optional
+        Support deprecated keyword options.
+
+        .. deprecated:: 3.5
+           The following keyword options will be removed for FloPy 3.6:
+
+             - ``prj`` (str or pathlike): use ``prjfile`` instead.
+             - ``epsg`` (int): use ``crs`` instead.
+             - ``proj4`` (str): use ``crs`` instead.
 
     Properties
     ----------
@@ -145,9 +153,8 @@ class StructuredGrid(Grid):
         botm=None,
         idomain=None,
         lenuni=None,
-        epsg=None,
-        proj4=None,
-        prj=None,
+        crs=None,
+        prjfile=None,
         xoff=0.0,
         yoff=0.0,
         angrot=0.0,
@@ -155,19 +162,20 @@ class StructuredGrid(Grid):
         nrow=None,
         ncol=None,
         laycbd=None,
+        **kwargs,
     ):
         super().__init__(
             "structured",
-            top,
-            botm,
-            idomain,
-            lenuni,
-            epsg,
-            proj4,
-            prj,
-            xoff,
-            yoff,
-            angrot,
+            top=top,
+            botm=botm,
+            idomain=idomain,
+            lenuni=lenuni,
+            crs=crs,
+            prjfile=prjfile,
+            xoff=xoff,
+            yoff=yoff,
+            angrot=angrot,
+            **kwargs,
         )
         if delc is not None:
             self.__nrow = len(delc)
@@ -189,15 +197,15 @@ class StructuredGrid(Grid):
                 self.__nlay = nlay
             else:
                 if laycbd is not None:
-                    self.__nlay = len(botm) - np.sum(laycbd > 0)
+                    self.__nlay = len(botm) - np.count_nonzero(laycbd)
                 else:
                     self.__nlay = len(botm)
         else:
             self.__nlay = nlay
         if laycbd is not None:
-            self.__laycbd = laycbd
+            self._laycbd = laycbd
         else:
-            self.__laycbd = np.zeros(self.__nlay or (), dtype=int)
+            self._laycbd = np.zeros(self.__nlay or (), dtype=int)
 
     ####################
     # Properties
@@ -464,7 +472,7 @@ class StructuredGrid(Grid):
                 z = np.empty((self.__nlay, self.__nrow, self.__ncol))
                 z[0, :, :] = (self._top[:, :] + self._botm[0, :, :]) / 2.0
                 ibs = np.arange(self.__nlay)
-                quasi3d = [cbd != 0 for cbd in self.__laycbd]
+                quasi3d = [cbd != 0 for cbd in self._laycbd]
                 if np.any(quasi3d):
                     ibs[1:] = ibs[1:] + np.cumsum(quasi3d)[: self.__nlay - 1]
                 for l, ib in enumerate(ibs[1:], 1):
@@ -753,10 +761,6 @@ class StructuredGrid(Grid):
         -------
             list of Polygon objects
         """
-        try:
-            import matplotlib.path as mpath
-        except ImportError:
-            raise ImportError("matplotlib required to use this method")
         cache_index = "xyzgrid"
         if (
             cache_index not in self._cache_dict
@@ -773,7 +777,74 @@ class StructuredGrid(Grid):
     ###############
     ### Methods ###
     ###############
-    def intersect(self, x, y, local=False, forgive=False):
+    def neighbors(self, *args, **kwargs):
+        """
+        Method to get nearest neighbors for a cell
+
+        Parameters
+        ----------
+        *args
+            lay (int), row (int), column (int)
+            or
+            node (int)
+
+        **kwargs
+            k : int
+                layer number
+            i : int
+                row number
+            j : int
+                column number
+            as_node : bool
+                flag to return neighbors as node numbers
+            method : str
+                "rook" for shared edge neighbors (default) "queen" for shared
+                vertex neighbors (for flow accumulation calculations)
+            reset : bool
+                flag to re-calculate neighbors, default is False
+
+        Returns
+        -------
+            list of neighboring cells
+        """
+        nn = None
+        as_nodes = kwargs.pop("as_nodes", False)
+
+        if kwargs:
+            if "node" in kwargs:
+                nn = kwargs.pop("node")
+                as_nodes = True
+            else:
+                k = kwargs.pop("k", 0)
+                i = kwargs.pop("i", None)
+                j = kwargs.pop("j", None)
+                if i is None or j is None:
+                    pass
+                else:
+                    nn = self.get_node([(k, i, j)])[0]
+
+        if len(args) > 0:
+            if len(args) == 1:
+                nn = args[0]
+                as_nodes = True
+            elif len(args) == 2:
+                k = 0
+                i, j = args[0:2]
+            else:
+                k, i, j = args[0:3]
+
+            if nn is None:
+                nn = self.get_node([(k, i, j)])[0]
+        else:
+            as_nodes = True
+
+        neighbors = super().neighbors(nn, **kwargs)
+        if not as_nodes:
+            neighbors = self.get_lrc(neighbors)
+
+        return neighbors
+
+    def intersect(self, x, y, z=None, local=False, forgive=False):
         """
         Get the row and column of a point with coordinates x and y
 
@@ -786,6 +857,9 @@ class StructuredGrid(Grid):
             The x-coordinate of the requested point
         y : float
             The y-coordinate of the requested point
+        z : float
+            Optional z-coordinate of the requested point (will return layer,
+            row, column) if supplied
         local: bool (optional)
             If True, x and y are in local coordinates (defaults to False)
         forgive: bool (optional)
@@ -829,7 +903,28 @@ class StructuredGrid(Grid):
             row = np.where(ycomp)[0][-1]
         if np.any(np.isnan([row, col])):
             row = col = np.nan
-        return row, col
+            if z is not None:
+                return None, row, col
+
+        if z is None:
+            return row, col
+
+        lay = np.nan
+        for layer in range(self.__nlay):
+            if (
+                self.top_botm[layer, row, col]
+                >= z
+                >= self.top_botm[layer + 1, row, col]
+            ):
+                lay = layer
+                break
+
+        if np.any(np.isnan([lay, row, col])):
+            lay = row = col = np.nan
+            if not forgive:
+                raise Exception("point given is outside the model area")
+
+        return lay, row, col
 
     def _cell_vert_list(self, i, j):
         """Get vertices for a single cell or sequence of i, j locations."""
@@ -892,45 +987,68 @@ class StructuredGrid(Grid):
 
     def get_lrc(self, nodes):
         """
-        Get layer, row, column from a list of zero based
+        Get layer, row, column from a list of zero-based
         MODFLOW node numbers.
+
+        Parameters
+        ----------
+        nodes : int, list or array_like
+            Zero-based node number
 
         Returns
         -------
-        v : list of tuples containing the layer (k), row (i),
+        list
+            list of tuples containing the layer (k), row (i),
             and column (j) for each node in the input list
-        """
-        if not isinstance(nodes, list):
-            nodes = [nodes]
-        ncpl = self.ncpl
-        v = []
-        for node in nodes:
-            k = int(np.floor(node / ncpl))
-            ij = int((node) - (ncpl * k))
-            i = int(np.floor(ij / self.__ncol))
-            j = int(ij - (i * self.__ncol))
 
-            v.append((k, i, j))
-        return v
+        Examples
+        --------
+        >>> import flopy
+        >>> sg = flopy.discretization.StructuredGrid(nlay=20, nrow=30, ncol=40)
+        >>> sg.get_lrc(100)
+        [(0, 2, 20)]
+        >>> sg.get_lrc([100, 1000, 10_000])
+        [(0, 2, 20), (0, 25, 0), (8, 10, 0)]
+        """
+        if isinstance(nodes, int):
+            nodes = [nodes]
+        shape = self.shape
+        if shape[0] is None:
+            shape = tuple(dim or 1 for dim in shape)
+        return list(zip(*np.unravel_index(nodes, shape)))
 
     def get_node(self, lrc_list):
         """
-        Get node number from a list of zero based MODFLOW
+        Get node number from a list of zero-based MODFLOW
         layer, row, column tuples.
+
+        Parameters
+        ----------
+        lrc_list : tuple of int or list of tuple of int
+            Zero-based layer, row, column tuples
 
         Returns
         -------
-        v : list of MODFLOW nodes for each layer (k), row (i),
+        list
+            list of MODFLOW nodes for each layer (k), row (i),
             and column (j) tuple in the input list
+
+        Examples
+        --------
+        >>> import flopy
+        >>> sg = flopy.discretization.StructuredGrid(nlay=20, nrow=30, ncol=40)
+        >>> sg.get_node((0, 2, 20))
+        [100]
+        >>> sg.get_node([(0, 2, 20), (0, 25, 0), (8, 10, 0)])
+        [100, 1000, 10000]
         """
         if not isinstance(lrc_list, list):
             lrc_list = [lrc_list]
-        nrc = self.__nrow * self.__ncol
-        v = []
-        for [k, i, j] in lrc_list:
-            node = int(((k) * nrc) + ((i) * self.__ncol) + j)
-            v.append(node)
-        return v
+        multi_index = tuple(np.array(lrc_list).T)
+        shape = self.shape
+        if shape[0] is None:
+            shape = tuple(dim or 1 for dim in shape)
+        return np.ravel_multi_index(multi_index, shape).tolist()
 
     def plot(self, **kwargs):
         """
@@ -950,48 +1068,6 @@ class StructuredGrid(Grid):
 
         mm = PlotMapView(modelgrid=self)
         return mm.plot_grid(**kwargs)
-
-    # Importing
-    @classmethod
-    def from_gridspec(cls, gridspec_file, lenuni=0):
-        f = open(gridspec_file, "r")
-        raw = f.readline().strip().split()
-        nrow = int(raw[0])
-        ncol = int(raw[1])
-        raw = f.readline().strip().split()
-        xul, yul, rot = float(raw[0]), float(raw[1]), float(raw[2])
-        delr = []
-        j = 0
-        while j < ncol:
-            raw = f.readline().strip().split()
-            for r in raw:
-                if "*" in r:
-                    rraw = r.split("*")
-                    for n in range(int(rraw[0])):
-                        delr.append(float(rraw[1]))
-                        j += 1
-                else:
-                    delr.append(float(r))
-                    j += 1
-        delc = []
-        i = 0
-        while i < nrow:
-            raw = f.readline().strip().split()
-            for r in raw:
-                if "*" in r:
-                    rraw = r.split("*")
-                    for n in range(int(rraw[0])):
-                        delc.append(float(rraw[1]))
-                        i += 1
-                else:
-                    delc.append(float(r))
-                    i += 1
-        f.close()
-        grd = cls(np.array(delc), np.array(delr), lenuni=lenuni)
-        xll = grd._xul_to_xll(xul)
-        yll = grd._yul_to_yll(yul)
-        cls.set_coord_info(xoff=xll, yoff=yll, angrot=rot)
-        return cls
 
     def array_at_verts_basic(self, a):
         """
@@ -1561,8 +1637,8 @@ class StructuredGrid(Grid):
                 plotarray = plotarray.reshape(self.shape)
                 plotarray = plotarray[layer, :, :]
         else:
-            raise Exception("Array to plot must be of dimension 1, 2, or 3")
-        msg = "{} /= {}".format(plotarray.shape, required_shape)
+            raise ValueError("Array to plot must be of dimension 1, 2, or 3")
+        msg = f"{plotarray.shape} /= {required_shape}"
         assert plotarray.shape == required_shape, msg
         return plotarray
 
@@ -1573,11 +1649,9 @@ class StructuredGrid(Grid):
 
         """
         iverts = []
-        inode = 0
         for i in range(self.nrow):
             for j in range(self.ncol):
-                iverts.append([inode] + self._build_structured_iverts(i, j))
-                inode += 1
+                iverts.append(self._build_structured_iverts(i, j))
         self._iverts = iverts
         return
 
@@ -1620,6 +1694,8 @@ class StructuredGrid(Grid):
         )
         return
 
+    # Importing
+
     # initialize grid from a grb file
     @classmethod
     def from_binary_grid_file(cls, file_path, verbose=False):
@@ -1643,11 +1719,10 @@ class StructuredGrid(Grid):
 
         grb_obj = MfGrdFile(file_path, verbose=verbose)
         if grb_obj.grid_type != "DIS":
-            err_msg = (
-                "Binary grid file ({}) ".format(os.path.basename(file_path))
-                + "is not a structured (DIS) grid."
+            raise ValueError(
+                f"Binary grid file ({os.path.basename(file_path)}) "
+                "is not a structured (DIS) grid."
             )
-            raise ValueError(err_msg)
 
         idomain = grb_obj.idomain
         xorigin = grb_obj.xorigin
@@ -1673,3 +1748,59 @@ class StructuredGrid(Grid):
             yoff=yorigin,
             angrot=angrot,
         )
+
+    @classmethod
+    def from_gridspec(cls, file_path: Union[str, os.PathLike], lenuni=0):
+        """
+        Instantiate a StructuredGrid from grid specification file.
+
+        Parameters
+        ----------
+        file_path: str or PathLike
+            Path to the grid specification file
+        lenuni: int
+            Length unit code
+
+        Returns
+        -------
+            A StructuredGrid
+        """
+
+        with open(file_path) as f:
+            raw = f.readline().strip().split()
+            nrow = int(raw[0])
+            ncol = int(raw[1])
+            raw = f.readline().strip().split()
+            xul, yul, rot = float(raw[0]), float(raw[1]), float(raw[2])
+            delr = []
+            j = 0
+            while j < ncol:
+                raw = f.readline().strip().split()
+                for r in raw:
+                    if "*" in r:
+                        rraw = r.split("*")
+                        for n in range(int(rraw[0])):
+                            delr.append(float(rraw[1]))
+                            j += 1
+                    else:
+                        delr.append(float(r))
+                        j += 1
+            delc = []
+            i = 0
+            while i < nrow:
+                raw = f.readline().strip().split()
+                for r in raw:
+                    if "*" in r:
+                        rraw = r.split("*")
+                        for n in range(int(rraw[0])):
+                            delc.append(float(rraw[1]))
+                            i += 1
+                    else:
+                        delc.append(float(r))
+                        i += 1
+
+        grd = cls(np.array(delc), np.array(delr), lenuni=lenuni)
+        xll = grd._xul_to_xll(xul, angrot=rot)
+        yll = grd._yul_to_yll(yul, angrot=rot)
+        grd.set_coord_info(xoff=xll, yoff=yll, angrot=rot)
+        return grd

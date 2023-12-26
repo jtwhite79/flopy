@@ -1,13 +1,16 @@
-import sys, inspect
+import inspect
+import sys
+
 import numpy as np
-from ..data.mfstructure import DatumType
-from ..data import mfdata
-from collections import OrderedDict
-from ..mfbase import ExtFileAction, MFDataException
+
 from ...datbase import DataType
+from ...utils.datautil import clean_filename
+from ..data import mfdata
+from ..data.mfstructure import DatumType
+from ..mfbase import ExtFileAction, MFDataException
+from .mfdatastorage import DataStorage, DataStorageType, DataStructureType
 from .mfdatautil import convert_data, to_string
 from .mffileaccess import MFFileAccessScalar
-from .mfdatastorage import DataStorage, DataStructureType, DataStorageType
 
 
 class MFScalar(mfdata.MFData):
@@ -83,7 +86,7 @@ class MFScalar(mfdata.MFData):
                     return np.int32
         return None
 
-    def has_data(self):
+    def has_data(self, key=None):
         """Returns whether this object has data associated with it."""
         try:
             return self._get_storage_obj().has_data()
@@ -165,7 +168,11 @@ class MFScalar(mfdata.MFData):
                         data = [data]
         else:
             if isinstance(data, str):
-                data = data.strip().split()[-1]
+                if self.structure.file_data or self.structure.nam_file_data:
+                    # clean up file name data
+                    data = clean_filename(data)
+                else:
+                    data = data.strip().split()[-1]
             else:
                 while (
                     isinstance(data, list)
@@ -178,36 +185,40 @@ class MFScalar(mfdata.MFData):
                     ) and len(data) > 1:
                         self._add_data_line_comment(data[1:], 0)
         storage = self._get_storage_obj()
-        data_struct = self.structure.data_item_structures[0]
-        try:
-            converted_data = convert_data(
-                data, self._data_dimensions, self._data_type, data_struct
-            )
-        except Exception as ex:
-            type_, value_, traceback_ = sys.exc_info()
-            comment = 'Could not convert data "{}" to type "{}".'.format(
-                data, self._data_type
-            )
-            raise MFDataException(
-                self.structure.get_model(),
-                self.structure.get_package(),
-                self._path,
-                "converting data",
-                self.structure.name,
-                inspect.stack()[0][3],
-                type_,
-                value_,
-                traceback_,
-                comment,
-                self._simulation_data.debug,
-                ex,
-            )
+        if data is None:
+            converted_data = data
+        else:
+            data_struct = self.structure.data_item_structures[0]
+            try:
+                converted_data = convert_data(
+                    data, self.data_dimensions, self._data_type, data_struct
+                )
+            except Exception as ex:
+                type_, value_, traceback_ = sys.exc_info()
+                comment = (
+                    f'Could not convert data "{data}" to type '
+                    f'"{self._data_type}".'
+                )
+                raise MFDataException(
+                    self.structure.get_model(),
+                    self.structure.get_package(),
+                    self._path,
+                    "converting data",
+                    self.structure.name,
+                    inspect.stack()[0][3],
+                    type_,
+                    value_,
+                    traceback_,
+                    comment,
+                    self._simulation_data.debug,
+                    ex,
+                )
         try:
             storage.set_data(converted_data, key=self._current_key)
         except Exception as ex:
             type_, value_, traceback_ = sys.exc_info()
-            comment = 'Could not set data "{}" to type "{}".'.format(
-                data, self._data_type
+            comment = (
+                f'Could not set data "{data}" to type "{self._data_type}".'
             )
             raise MFDataException(
                 self.structure.get_model(),
@@ -271,9 +282,7 @@ class MFScalar(mfdata.MFData):
                     self._get_storage_obj().set_data(current_val + 1)
                 except Exception as ex:
                     type_, value_, traceback_ = sys.exc_info()
-                    comment = 'Could increment data "{}" by one' ".".format(
-                        current_val
-                    )
+                    comment = f'Could increment data "{current_val}" by one.'
                     raise MFDataException(
                         self.structure.get_model(),
                         self.structure.get_package(),
@@ -470,7 +479,7 @@ class MFScalar(mfdata.MFData):
                                         current_data,
                                         self._data_type,
                                         self._simulation_data,
-                                        self._data_dimensions,
+                                        self.data_dimensions,
                                         data_item=data_item,
                                     )
                                 )
@@ -497,7 +506,7 @@ class MFScalar(mfdata.MFData):
                 index += 1
 
             text = self._simulation_data.indent_string.join(text_line)
-            return "{}{}\n".format(self._simulation_data.indent_string, text)
+            return f"{self._simulation_data.indent_string}{text}\n"
         else:
             data_item = self.structure.data_item_structures[0]
             try:
@@ -546,7 +555,7 @@ class MFScalar(mfdata.MFData):
                     data,
                     self._data_type,
                     self._simulation_data,
-                    self._data_dimensions,
+                    self.data_dimensions,
                     data_item=data_item,
                     verify_data=self._simulation_data.verify_data,
                 )
@@ -570,9 +579,7 @@ class MFScalar(mfdata.MFData):
                     self._simulation_data.debug,
                 )
             if values_only:
-                return "{}{}".format(
-                    self._simulation_data.indent_string, values
-                )
+                return f"{self._simulation_data.indent_string}{values}"
             else:
                 # keyword + data
                 return "{}{}{}{}\n".format(
@@ -628,7 +635,7 @@ class MFScalar(mfdata.MFData):
         self._resync()
         file_access = MFFileAccessScalar(
             self.structure,
-            self._data_dimensions,
+            self.data_dimensions,
             self._simulation_data,
             self._path,
             self._current_key,
@@ -646,7 +653,7 @@ class MFScalar(mfdata.MFData):
         return DataStorage(
             self._simulation_data,
             self._model_or_sim,
-            self._data_dimensions,
+            self.data_dimensions,
             self.get_file_entry,
             DataStorageType.internal_array,
             DataStructureType.scalar,
@@ -674,7 +681,7 @@ class MFScalar(mfdata.MFData):
         Returns:
              axes: list matplotlib.axes object
         """
-        from flopy.plot.plotutil import PlotUtilities
+        from ...plot.plotutil import PlotUtilities
 
         if not self.plottable:
             raise TypeError("Scalar values are not plottable")
@@ -683,7 +690,7 @@ class MFScalar(mfdata.MFData):
             self,
             filename_base=filename_base,
             file_extension=file_extension,
-            **kwargs
+            **kwargs,
         )
         return axes
 
@@ -720,7 +727,9 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
         path=None,
         dimensions=None,
     ):
-        super().__init__(
+        mfdata.MFTransient.__init__(self)
+        MFScalar.__init__(
+            self,
             sim_data=sim_data,
             model_or_sim=model_or_sim,
             structure=structure,
@@ -728,7 +737,6 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
             path=path,
             dimensions=dimensions,
         )
-        self._transient_setup(self._data_storage)
         self.repeating = True
 
     @property
@@ -776,16 +784,13 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
 
     def has_data(self, key=None):
         if key is None:
-            data_found = False
             for sto_key in self._data_storage.keys():
                 self.get_data_prep(sto_key)
-                data_found = data_found or super().has_data()
-                if data_found:
-                    break
+                if super().has_data():
+                    return True
         else:
             self.get_data_prep(key)
-            data_found = super().has_data()
-        return data_found
+            return super().has_data()
 
     def get_data(self, key=0, **kwargs):
         """Returns the data for stress period `key`.
@@ -820,7 +825,9 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
             if `data` is a dictionary.
 
         """
-        if isinstance(data, dict) or isinstance(data, OrderedDict):
+        if data is None and key is None:
+            return
+        if isinstance(data, dict):
             # each item in the dictionary is a list for one stress period
             # the dictionary key is the stress period the list is for
             for key, list_item in data.items():
@@ -857,7 +864,7 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
                         ext_file_action=ext_file_action
                     )
                     file_entry.append(text_entry)
-            if file_entry > 1:
+            if len(file_entry) > 1:
                 return "\n\n".join(file_entry)
             elif file_entry == 1:
                 return file_entry[0]
@@ -902,7 +909,7 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
         )
 
     def _new_storage(self, stress_period=0):
-        return OrderedDict()
+        return {}
 
     def _get_storage_obj(self):
         if (
@@ -918,7 +925,7 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
         file_extension=None,
         kper=0,
         fignum=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Plot transient scalar model data
@@ -970,7 +977,7 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
             Empty list is returned if filename_base is not None. Otherwise
             a list of matplotlib.pyplot.axis is returned.
         """
-        from flopy.plot.plotutil import PlotUtilities
+        from ...plot.plotutil import PlotUtilities
 
         if not self.plottable:
             raise TypeError("Simulation level packages are not plottable")
@@ -981,6 +988,6 @@ class MFScalarTransient(MFScalar, mfdata.MFTransient):
             file_extension=file_extension,
             kper=kper,
             fignum=fignum,
-            **kwargs
+            **kwargs,
         )
         return axes

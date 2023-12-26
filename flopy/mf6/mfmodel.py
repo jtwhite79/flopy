@@ -1,26 +1,34 @@
-import os, sys, inspect, warnings
+import inspect
+import os
+import sys
+from typing import Union
+
 import numpy as np
+
+from ..discretization.grid import Grid
+from ..discretization.modeltime import ModelTime
+from ..discretization.structuredgrid import StructuredGrid
+from ..discretization.unstructuredgrid import UnstructuredGrid
+from ..discretization.vertexgrid import VertexGrid
+from ..mbase import ModelInterface
+from ..utils import datautil
+from ..utils.check import mf6check
+from .coordinates import modeldimensions
+from .data import mfdata, mfdatalist, mfstructure
+from .data.mfdatautil import DataSearchOutput, iterable
 from .mfbase import (
-    PackageContainer,
     ExtFileAction,
-    PackageContainerType,
-    MFDataException,
-    ReadAsArraysException,
     FlopyException,
+    MFDataException,
+    MFFileMgmt,
+    PackageContainer,
+    PackageContainerType,
+    ReadAsArraysException,
     VerbosityLevel,
 )
 from .mfpackage import MFPackage
-from .coordinates import modeldimensions
-from ..utils import datautil
-from ..discretization.structuredgrid import StructuredGrid
-from ..discretization.vertexgrid import VertexGrid
-from ..discretization.unstructuredgrid import UnstructuredGrid
-from ..discretization.grid import Grid
-from flopy.discretization.modeltime import ModelTime
-from ..mbase import ModelInterface
 from .utils.mfenums import DiscretizationType
-from .data import mfstructure
-from ..utils.check import mf6check
+from .utils.output_util import MF6Output
 
 
 class MFModel(PackageContainer, ModelInterface):
@@ -56,7 +64,7 @@ class MFModel(PackageContainer, ModelInterface):
         Name of the model
     exe_name : str
         Model executable name
-    packages : OrderedDict(MFPackage)
+    packages : dict of MFPackage
         Dictionary of model packages
 
     """
@@ -68,12 +76,12 @@ class MFModel(PackageContainer, ModelInterface):
         modelname="model",
         model_nam_file=None,
         version="mf6",
-        exe_name="mf6.exe",
+        exe_name="mf6",
         add_to_simulation=True,
         structure=None,
         model_rel_path=".",
         verbose=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(simulation.simulation_data, modelname)
         self.simulation = simulation
@@ -85,7 +93,7 @@ class MFModel(PackageContainer, ModelInterface):
         self.type = "Model"
 
         if model_nam_file is None:
-            model_nam_file = "{}.nam".format(modelname)
+            model_nam_file = f"{modelname}.nam"
 
         if add_to_simulation:
             self.structure = simulation.register_model(
@@ -104,7 +112,7 @@ class MFModel(PackageContainer, ModelInterface):
         self._verbose = verbose
 
         if model_nam_file is None:
-            self.model_nam_file = "{}.nam".format(modelname)
+            self.model_nam_file = f"{modelname}.nam"
         else:
             self.model_nam_file = model_nam_file
 
@@ -112,31 +120,18 @@ class MFModel(PackageContainer, ModelInterface):
         xll = kwargs.pop("xll", None)
         yll = kwargs.pop("yll", None)
         self._xul = kwargs.pop("xul", None)
-        if self._xul is not None:
-            warnings.warn(
-                "xul/yul have been deprecated. Use xll/yll instead.",
-                DeprecationWarning,
-            )
         self._yul = kwargs.pop("yul", None)
-        if self._yul is not None:
-            warnings.warn(
-                "xul/yul have been deprecated. Use xll/yll instead.",
-                DeprecationWarning,
-            )
         rotation = kwargs.pop("rotation", 0.0)
-        proj4 = kwargs.pop("proj4_str", None)
+        crs = kwargs.pop("crs", None)
         # build model grid object
-        self._modelgrid = Grid(
-            proj4=proj4, xoff=xll, yoff=yll, angrot=rotation
-        )
+        self._modelgrid = Grid(crs=crs, xoff=xll, yoff=yll, angrot=rotation)
 
         self.start_datetime = None
         # check for extraneous kwargs
         if len(kwargs) > 0:
             kwargs_str = ", ".join(kwargs.keys())
             excpt_str = (
-                'Extraneous kwargs "{}" provided to '
-                "MFModel.".format(kwargs_str)
+                f'Extraneous kwargs "{kwargs_str}" provided to MFModel.'
             )
             raise FlopyException(excpt_str)
 
@@ -144,14 +139,23 @@ class MFModel(PackageContainer, ModelInterface):
         # create name file based on model type - support different model types
         package_obj = self.package_factory("nam", model_type[0:3])
         if not package_obj:
-            excpt_str = "Name file could not be found for model" "{}.".format(
-                model_type[0:3]
+            excpt_str = (
+                f"Name file could not be found for model{model_type[0:3]}."
             )
             raise FlopyException(excpt_str)
 
         self.name_file = package_obj(
-            self, filename=self.model_nam_file, pname=self.name
+            self,
+            filename=self.model_nam_file,
+            pname=self.name,
+            _internal_package=True,
         )
+
+    def __init_subclass__(cls):
+        """Register model type"""
+        super().__init_subclass__()
+        PackageContainer.modflow_models.append(cls)
+        PackageContainer.models_by_type[cls.model_type] = cls
 
     def __getattr__(self, item):
         """
@@ -177,6 +181,24 @@ class MFModel(PackageContainer, ModelInterface):
         if package is not None:
             return package
         raise AttributeError(item)
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name) and getattr(self, name) is not None:
+            attribute = object.__getattribute__(self, name)
+            if attribute is not None and isinstance(attribute, mfdata.MFData):
+                try:
+                    if isinstance(attribute, mfdatalist.MFList):
+                        attribute.set_data(value, autofill=True)
+                    else:
+                        attribute.set_data(value)
+                except MFDataException as mfde:
+                    raise MFDataException(
+                        mfdata_except=mfde,
+                        model=self.name,
+                        package="",
+                    )
+                return
+        super().__setattr__(name, value)
 
     def __repr__(self):
         return self._get_data_str(True)
@@ -324,7 +346,7 @@ class MFModel(PackageContainer, ModelInterface):
             model.
 
         """
-
+        force_resync = False
         if not self._mg_resync:
             return self._modelgrid
         if self.get_grid_type() == DiscretizationType.DIS:
@@ -342,22 +364,25 @@ class MFModel(PackageContainer, ModelInterface):
                         botm=None,
                         idomain=None,
                         lenuni=None,
-                        proj4=self._modelgrid.proj4,
-                        epsg=self._modelgrid.epsg,
+                        crs=self._modelgrid.crs,
                         xoff=self._modelgrid.xoffset,
                         yoff=self._modelgrid.yoffset,
                         angrot=self._modelgrid.angrot,
                     )
             else:
+                botm = dis.botm.array
+                idomain = dis.idomain.array
+                if idomain is None:
+                    force_resync = True
+                    idomain = self._resolve_idomain(idomain, botm)
                 self._modelgrid = StructuredGrid(
                     delc=dis.delc.array,
                     delr=dis.delr.array,
                     top=dis.top.array,
-                    botm=dis.botm.array,
-                    idomain=dis.idomain.array,
+                    botm=botm,
+                    idomain=idomain,
                     lenuni=dis.length_units.array,
-                    proj4=self._modelgrid.proj4,
-                    epsg=self._modelgrid.epsg,
+                    crs=self._modelgrid.crs,
                     xoff=self._modelgrid.xoffset,
                     yoff=self._modelgrid.yoffset,
                     angrot=self._modelgrid.angrot,
@@ -377,22 +402,25 @@ class MFModel(PackageContainer, ModelInterface):
                         botm=None,
                         idomain=None,
                         lenuni=None,
-                        proj4=self._modelgrid.proj4,
-                        epsg=self._modelgrid.epsg,
+                        crs=self._modelgrid.crs,
                         xoff=self._modelgrid.xoffset,
                         yoff=self._modelgrid.yoffset,
                         angrot=self._modelgrid.angrot,
                     )
             else:
+                botm = dis.botm.array
+                idomain = dis.idomain.array
+                if idomain is None:
+                    force_resync = True
+                    idomain = self._resolve_idomain(idomain, botm)
                 self._modelgrid = VertexGrid(
                     vertices=dis.vertices.array,
                     cell2d=dis.cell2d.array,
                     top=dis.top.array,
-                    botm=dis.botm.array,
-                    idomain=dis.idomain.array,
+                    botm=botm,
+                    idomain=idomain,
                     lenuni=dis.length_units.array,
-                    proj4=self._modelgrid.proj4,
-                    epsg=self._modelgrid.epsg,
+                    crs=self._modelgrid.crs,
                     xoff=self._modelgrid.xoffset,
                     yoff=self._modelgrid.yoffset,
                     angrot=self._modelgrid.angrot,
@@ -452,11 +480,12 @@ class MFModel(PackageContainer, ModelInterface):
                 idomain=idomain,
                 lenuni=dis.length_units.array,
                 ncpl=ncpl,
-                proj4=self._modelgrid.proj4,
-                epsg=self._modelgrid.epsg,
+                crs=self._modelgrid.crs,
                 xoff=self._modelgrid.xoffset,
                 yoff=self._modelgrid.yoffset,
                 angrot=self._modelgrid.angrot,
+                iac=dis.iac.array,
+                ja=dis.ja.array,
             )
         elif self.get_grid_type() == DiscretizationType.DISL:
             dis = self.get_package("disl")
@@ -473,22 +502,25 @@ class MFModel(PackageContainer, ModelInterface):
                         botm=None,
                         idomain=None,
                         lenuni=None,
-                        proj4=self._modelgrid.proj4,
-                        epsg=self._modelgrid.epsg,
+                        crs=self._modelgrid.crs,
                         xoff=self._modelgrid.xoffset,
                         yoff=self._modelgrid.yoffset,
                         angrot=self._modelgrid.angrot,
                     )
             else:
+                botm = dis.botm.array
+                idomain = dis.idomain.array
+                if idomain is None:
+                    force_resync = True
+                    idomain = self._resolve_idomain(idomain, botm)
                 self._modelgrid = VertexGrid(
                     vertices=dis.vertices.array,
                     cell1d=dis.cell1d.array,
                     top=dis.top.array,
-                    botm=dis.botm.array,
-                    idomain=dis.idomain.array,
+                    botm=botm,
+                    idomain=idomain,
                     lenuni=dis.length_units.array,
-                    proj4=self._modelgrid.proj4,
-                    epsg=self._modelgrid.epsg,
+                    crs=self._modelgrid.crs,
                     xoff=self._modelgrid.xoffset,
                     yoff=self._modelgrid.yoffset,
                     angrot=self._modelgrid.angrot,
@@ -524,9 +556,12 @@ class MFModel(PackageContainer, ModelInterface):
         if angrot is None:
             angrot = self._modelgrid.angrot
         self._modelgrid.set_coord_info(
-            xorig, yorig, angrot, self._modelgrid.epsg, self._modelgrid.proj4
+            xorig,
+            yorig,
+            angrot,
+            self._modelgrid.crs,
         )
-        self._mg_resync = not self._modelgrid.is_complete
+        self._mg_resync = not self._modelgrid.is_complete or force_resync
         return self._modelgrid
 
     @property
@@ -606,7 +641,7 @@ class MFModel(PackageContainer, ModelInterface):
         try:
             return self.oc.output
         except AttributeError:
-            return None
+            return MF6Output(self)
 
     def export(self, f, **kwargs):
         """Method to export a model to a shapefile or netcdf file
@@ -620,11 +655,7 @@ class MFModel(PackageContainer, ModelInterface):
             modelgrid: flopy.discretization.Grid
                 User supplied modelgrid object which will supercede the built
                 in modelgrid object
-            epsg : int
-                EPSG projection code
-            prj : str
-                The prj file name
-            if fmt is set to 'vtk', parameters of vtk.export_model
+            if fmt is set to 'vtk', parameters of Vtk initializer
 
         """
         from ..export import utils
@@ -675,18 +706,18 @@ class MFModel(PackageContainer, ModelInterface):
 
         return self._check(chk, level)
 
-    @classmethod
+    @staticmethod
     def load_base(
-        cls,
+        cls_child,
         simulation,
         structure,
         modelname="NewModel",
         model_nam_file="modflowtest.nam",
         mtype="gwf",
         version="mf6",
-        exe_name="mf6.exe",
+        exe_name: Union[str, os.PathLike] = "mf6",
         strict=True,
-        model_rel_path=".",
+        model_rel_path=os.curdir,
         load_only=None,
     ):
         """
@@ -706,10 +737,8 @@ class MFModel(PackageContainer, ModelInterface):
             relative path to the model name file from model working folder
         version : str
             version of modflow
-        exe_name : str
-            model executable name
-        model_ws : str
-            model working folder relative to simulation working folder
+        exe_name : str or PathLike
+            model executable name or path
         strict : bool
             strict mode when loading files
         model_rel_path : str
@@ -729,9 +758,8 @@ class MFModel(PackageContainer, ModelInterface):
         Examples
         --------
         """
-        instance = cls(
+        instance = cls_child(
             simulation,
-            mtype,
             modelname,
             model_nam_file=model_nam_file,
             version=version,
@@ -751,9 +779,9 @@ class MFModel(PackageContainer, ModelInterface):
         vnum = mfstructure.MFStructure().get_version_string()
         # FIX: Transport - Priority packages maybe should not be hard coded
         priority_packages = {
-            "dis{}".format(vnum): 1,
-            "disv{}".format(vnum): 1,
-            "disu{}".format(vnum): 1,
+            f"dis{vnum}": 1,
+            f"disv{vnum}": 1,
+            f"disu{vnum}": 1,
         }
         packages_ordered = []
         package_recarray = instance.simulation_data.mfdata[
@@ -786,7 +814,7 @@ class MFModel(PackageContainer, ModelInterface):
                         simulation.simulation_data.verbosity_level.value
                         >= VerbosityLevel.normal.value
                     ):
-                        print("    skipping package {}...".format(ftype))
+                        print(f"    skipping package {ftype}...")
                     continue
                 if model_rel_path and model_rel_path != ".":
                     # strip off model relative path from the file path
@@ -796,7 +824,7 @@ class MFModel(PackageContainer, ModelInterface):
                     simulation.simulation_data.verbosity_level.value
                     >= VerbosityLevel.normal.value
                 ):
-                    print("    loading package {}...".format(ftype))
+                    print(f"    loading package {ftype}...")
                 # load package
                 instance.load_package(ftype, fname, pname, strict, None)
                 sim_data = simulation.simulation_data
@@ -829,6 +857,287 @@ class MFModel(PackageContainer, ModelInterface):
 
         return instance
 
+    def inspect_cells(
+        self,
+        cell_list,
+        stress_period=None,
+        output_file_path=None,
+        inspect_budget=True,
+        inspect_dependent_var=True,
+    ):
+        """
+        Inspect model cells.  Returns model data associated with cells.
+
+        Parameters
+        ----------
+        cell_list : list of tuples
+            List of model cells.  Each model cell is a tuple of integers.
+            ex: [(1,1,1), (2,4,3)]
+        stress_period : int
+            For transient data qnly return data from this stress period.  If
+            not specified or None, all stress period data will be returned.
+        output_file_path: str
+            Path to output file that will contain the inspection results
+        inspect_budget: bool
+            Inspect budget file
+        inspect_dependent_var: bool
+            Inspect head file
+        Returns
+        -------
+        output : dict
+            Dictionary containing inspection results
+
+        Examples
+        --------
+
+        >>> import flopy
+        >>> sim = flopy.mf6.MFSimulationBase.load("name", "mf6", "mf6", ".")
+        >>> model = sim.get_model()
+        >>> inspect_list = [(2, 3, 2), (0, 4, 2), (0, 2, 4)]
+        >>> out_file = os.path.join("temp", "inspect_AdvGW_tidal.csv")
+        >>> model.inspect_cells(inspect_list, output_file_path=out_file)
+        """
+        # handle no cell case
+        if cell_list is None or len(cell_list) == 0:
+            return None
+
+        output_by_package = {}
+        # loop through all packages
+        for pp in self.packagelist:
+            # call the package's "inspect_cells" method
+            package_output = pp.inspect_cells(cell_list, stress_period)
+            if len(package_output) > 0:
+                output_by_package[
+                    f"{pp.package_name} package"
+                ] = package_output
+        # get dependent variable
+        if inspect_dependent_var:
+            try:
+                if self.model_type == "gwf6":
+                    heads = self.output.head()
+                    name = "heads"
+                elif self.model_type == "gwt6":
+                    heads = self.output.concentration()
+                    name = "concentration"
+                else:
+                    inspect_dependent_var = False
+            except Exception:
+                inspect_dependent_var = False
+        if inspect_dependent_var and heads is not None:
+            kstp_kper_lst = heads.get_kstpkper()
+            data_output = DataSearchOutput((name,))
+            data_output.output = True
+            for kstp_kper in kstp_kper_lst:
+                if stress_period is not None and stress_period != kstp_kper[1]:
+                    continue
+                head_array = np.array(heads.get_data(kstpkper=kstp_kper))
+                # flatten output data in disv and disu cases
+                if len(cell_list[0]) == 2:
+                    head_array = head_array[0, :, :]
+                elif len(cell_list[0]) == 1:
+                    head_array = head_array[0, 0, :]
+                # find data matches
+                self.match_array_cells(
+                    cell_list,
+                    head_array.shape,
+                    head_array,
+                    kstp_kper,
+                    data_output,
+                )
+            if len(data_output.data_entries) > 0:
+                output_by_package[f"{name} output"] = [data_output]
+
+        # get model dimensions
+        model_shape = self.modelgrid.shape
+
+        # get budgets
+        if inspect_budget:
+            try:
+                bud = self.output.budget()
+            except Exception:
+                inspect_budget = False
+        if inspect_budget and bud is not None:
+            kstp_kper_lst = bud.get_kstpkper()
+            rec_names = bud.get_unique_record_names()
+            budget_matches = []
+            for rec_name in rec_names:
+                # clean up binary string name
+                string_name = str(rec_name)[3:-1].strip()
+                data_output = DataSearchOutput((string_name,))
+                data_output.output = True
+                for kstp_kper in kstp_kper_lst:
+                    if (
+                        stress_period is not None
+                        and stress_period != kstp_kper[1]
+                    ):
+                        continue
+                    budget_array = np.array(
+                        bud.get_data(
+                            kstpkper=kstp_kper,
+                            text=rec_name,
+                            full3D=True,
+                        )[0]
+                    )
+                    if len(budget_array.shape) == 4:
+                        # get rid of 4th "time" dimension
+                        budget_array = budget_array[0, :, :, :]
+                    # flatten output data in disv and disu cases
+                    if len(cell_list[0]) == 2 and len(budget_array.shape) >= 3:
+                        budget_array = budget_array[0, :, :]
+                    elif (
+                        len(cell_list[0]) == 1 and len(budget_array.shape) >= 2
+                    ):
+                        budget_array = budget_array[0, :]
+                    # find data matches
+                    if budget_array.shape != model_shape:
+                        # no support yet for different shaped budgets like
+                        # flow_ja_face
+                        continue
+
+                    self.match_array_cells(
+                        cell_list,
+                        budget_array.shape,
+                        budget_array,
+                        kstp_kper,
+                        data_output,
+                    )
+                if len(data_output.data_entries) > 0:
+                    budget_matches.append(data_output)
+            if len(budget_matches) > 0:
+                output_by_package["budget output"] = budget_matches
+
+        if len(output_by_package) > 0 and output_file_path is not None:
+            with open(output_file_path, "w") as fd:
+                # write document header
+                fd.write(f"Inspect cell results for model {self.name}\n")
+                output = []
+                for cell in cell_list:
+                    output.append(" ".join([str(i) for i in cell]))
+                output = ",".join(output)
+                fd.write(f"Model cells inspected,{output}\n\n")
+
+                for package_name, matches in output_by_package.items():
+                    fd.write(f"Results from {package_name}\n")
+                    for search_output in matches:
+                        # write header line with data name
+                        fd.write(
+                            f",Results from "
+                            f"{search_output.path_to_data[-1]}\n"
+                        )
+                        # write data header
+                        if search_output.transient:
+                            if search_output.output:
+                                fd.write(",stress_period,time_step")
+                            else:
+                                fd.write(",stress_period/key")
+                        if search_output.data_header is not None:
+                            if len(search_output.data_entry_cellids) > 0:
+                                fd.write(",cellid")
+                            h_columns = ",".join(search_output.data_header)
+                            fd.write(f",{h_columns}\n")
+                        else:
+                            fd.write(f",cellid,data\n")
+                        # write data found
+                        for index, data_entry in enumerate(
+                            search_output.data_entries
+                        ):
+                            if search_output.transient:
+                                sp = search_output.data_entry_stress_period[
+                                    index
+                                ]
+                                if search_output.output:
+                                    fd.write(f",{sp[1]},{sp[0]}")
+                                else:
+                                    fd.write(f",{sp}")
+                            if search_output.data_header is not None:
+                                if len(search_output.data_entry_cellids) > 0:
+                                    cells = search_output.data_entry_cellids[
+                                        index
+                                    ]
+                                    output = " ".join([str(i) for i in cells])
+                                    fd.write(f",{output}")
+                                fd.write(self._format_data_entry(data_entry))
+                            else:
+                                output = " ".join(
+                                    [
+                                        str(i)
+                                        for i in search_output.data_entry_ids[
+                                            index
+                                        ]
+                                    ]
+                                )
+                                fd.write(f",{output}")
+                                fd.write(self._format_data_entry(data_entry))
+                    fd.write(f"\n")
+        return output_by_package
+
+    def match_array_cells(
+        self, cell_list, data_shape, array_data, key, data_output
+    ):
+        # loop through list of cells we are searching for
+        for cell in cell_list:
+            if len(data_shape) == 3 or data_shape[0] == "nodes":
+                # data is by cell
+                if array_data.ndim == 3 and len(cell) == 3:
+                    data_output.data_entries.append(
+                        array_data[cell[0], cell[1], cell[2]]
+                    )
+                    data_output.data_entry_ids.append(cell)
+                    data_output.data_entry_stress_period.append(key)
+                elif array_data.ndim == 2 and len(cell) == 2:
+                    data_output.data_entries.append(
+                        array_data[cell[0], cell[1]]
+                    )
+                    data_output.data_entry_ids.append(cell)
+                    data_output.data_entry_stress_period.append(key)
+                elif array_data.ndim == 1 and len(cell) == 1:
+                    data_output.data_entries.append(array_data[cell[0]])
+                    data_output.data_entry_ids.append(cell)
+                    data_output.data_entry_stress_period.append(key)
+                else:
+                    if (
+                        self.simulation_data.verbosity_level.value
+                        >= VerbosityLevel.normal.value
+                    ):
+                        warning_str = (
+                            'WARNING: CellID "{}" not same '
+                            "number of dimensions as data "
+                            "{}.".format(cell, data_output.path_to_data)
+                        )
+                        print(warning_str)
+            elif len(data_shape) == 2:
+                # get data based on ncpl/lay
+                if array_data.ndim == 2 and len(cell) == 2:
+                    data_output.data_entries.append(
+                        array_data[cell[0], cell[1]]
+                    )
+                    data_output.data_entry_ids.append(cell)
+                    data_output.data_entry_stress_period.append(key)
+                elif array_data.ndim == 1 and len(cell) == 1:
+                    data_output.data_entries.append(array_data[cell[0]])
+                    data_output.data_entry_ids.append(cell)
+                    data_output.data_entry_stress_period.append(key)
+            elif len(data_shape) == 1:
+                # get data based on nodes
+                if len(cell) == 1 and array_data.ndim == 1:
+                    data_output.data_entries.append(array_data[cell[0]])
+                    data_output.data_entry_ids.append(cell)
+                    data_output.data_entry_stress_period.append(key)
+
+    @staticmethod
+    def _format_data_entry(data_entry):
+        output = ""
+        if iterable(data_entry, True):
+            for item in data_entry:
+                if isinstance(item, tuple):
+                    formatted = " ".join([str(i) for i in item])
+                    output = f"{output},{formatted}"
+                else:
+                    output = f"{output},{item}"
+            return f"{output}\n"
+        else:
+            return f",{data_entry}\n"
+
     def write(self, ext_file_action=ExtFileAction.copy_relative_paths):
         """
         Writes out model's package files.
@@ -857,7 +1166,7 @@ class MFModel(PackageContainer, ModelInterface):
                 self.simulation_data.verbosity_level.value
                 >= VerbosityLevel.normal.value
             ):
-                print("    writing package {}...".format(pp._get_pname()))
+                print(f"    writing package {pp._get_pname()}...")
             pp.write(ext_file_action=ext_file_action)
 
     def get_grid_type(self):
@@ -873,28 +1182,28 @@ class MFModel(PackageContainer, ModelInterface):
         structure = mfstructure.MFStructure()
         if (
             package_recarray.search_data(
-                "dis{}".format(structure.get_version_string()), 0
+                f"dis{structure.get_version_string()}", 0
             )
             is not None
         ):
             return DiscretizationType.DIS
         elif (
             package_recarray.search_data(
-                "disv{}".format(structure.get_version_string()), 0
+                f"disv{structure.get_version_string()}", 0
             )
             is not None
         ):
             return DiscretizationType.DISV
         elif (
             package_recarray.search_data(
-                "disu{}".format(structure.get_version_string()), 0
+                f"disu{structure.get_version_string()}", 0
             )
             is not None
         ):
             return DiscretizationType.DISU
         elif (
             package_recarray.search_data(
-                "disl{}".format(structure.get_version_string()), 0
+                f"disl{structure.get_version_string()}", 0
             )
             is not None
         ):
@@ -913,7 +1222,7 @@ class MFModel(PackageContainer, ModelInterface):
         for record in solution_group:
             for model_name in record[2:]:
                 if model_name == self.name:
-                    return self.simulation.get_ims_package(record[1])
+                    return self.simulation.get_solution_package(record[1])
         return None
 
     def get_steadystate_list(self):
@@ -993,7 +1302,7 @@ class MFModel(PackageContainer, ModelInterface):
         # update path in the file manager
         file_mgr = self.simulation_data.mfpath
         file_mgr.set_last_accessed_model_path()
-        path = file_mgr.string_to_file_path(model_ws)
+        path = model_ws
         file_mgr.model_relative_path[self.name] = path
 
         if (
@@ -1047,13 +1356,27 @@ class MFModel(PackageContainer, ModelInterface):
                 # update package file locations in model name file
                 packages = self.name_file.packages
                 packages_data = packages.get_data()
-                for index, entry in enumerate(packages_data):
-                    old_package_name = os.path.split(entry[1])[1]
-                    packages_data[index][1] = os.path.join(
-                        path, old_package_name
-                    )
-                packages.set_data(packages_data)
-
+                if packages_data is not None:
+                    for index, entry in enumerate(packages_data):
+                        # get package object associated with entry
+                        package = None
+                        if len(entry) >= 3:
+                            package = self.get_package(entry[2])
+                        if package is None:
+                            package = self.get_package(entry[0])
+                        if package is not None:
+                            # combine model relative path with package path
+                            packages_data[index][1] = os.path.join(
+                                path, package.filename
+                            )
+                        else:
+                            # package not found, create path based on
+                            # information in name file
+                            old_package_name = os.path.split(entry[1])[-1]
+                            packages_data[index][1] = os.path.join(
+                                path, old_package_name
+                            )
+                    packages.set_data(packages_data)
                 # update files referenced from within packages
                 for package in self.packagelist:
                     package.set_model_relative_path(model_ws)
@@ -1081,14 +1404,15 @@ class MFModel(PackageContainer, ModelInterface):
             packages = [package_name]
         else:
             packages = self.get_package(package_name)
-            if not isinstance(packages, list):
+            if not isinstance(packages, list) and packages is not None:
                 packages = [packages]
+        if packages is None:
+            return
         for package in packages:
             if package.model_or_sim.name != self.name:
                 except_text = (
-                    "Package can not be removed from model {} "
-                    "since it is "
-                    "not part of "
+                    "Package can not be removed from model "
+                    "{self.model_name} since it is not part of it."
                 )
                 raise mfstructure.FlopyException(except_text)
 
@@ -1101,7 +1425,7 @@ class MFModel(PackageContainer, ModelInterface):
                 message = (
                     "Error occurred while reading package names "
                     "from name file in model "
-                    '"{}".'.format(self.name)
+                    f'"{self.name}"'
                 )
                 raise MFDataException(
                     mfdata_except=mfde,
@@ -1112,7 +1436,8 @@ class MFModel(PackageContainer, ModelInterface):
             try:
                 new_rec_array = None
                 for item in package_data:
-                    if item[1] != package._filename:
+                    filename = os.path.basename(item[1])
+                    if filename != package.filename:
                         if new_rec_array is None:
                             new_rec_array = np.rec.array(
                                 [item.tolist()], package_data.dtype
@@ -1139,8 +1464,8 @@ class MFModel(PackageContainer, ModelInterface):
             except MFDataException as mfde:
                 message = (
                     "Error occurred while setting package names "
-                    'from name file in model "{}".  Package name '
-                    "data:\n{}".format(self.name, new_rec_array)
+                    f'from name file in model "{self.name}".  Package name '
+                    f"data:\n{new_rec_array}"
                 )
                 raise MFDataException(
                     mfdata_except=mfde,
@@ -1161,6 +1486,79 @@ class MFModel(PackageContainer, ModelInterface):
             for child_package in child_package_list:
                 self._remove_package_from_dictionaries(child_package)
 
+    def update_package_filename(self, package, new_name):
+        """
+        Updates the filename for a package.  For internal flopy use only.
+
+        Parameters
+        ----------
+        package : MFPackage
+            Package object
+        new_name : str
+            New package name
+        """
+        try:
+            # get namefile package data
+            package_data = self.name_file.packages.get_data()
+        except MFDataException as mfde:
+            message = (
+                "Error occurred while updating package names "
+                "from name file in model "
+                f'"{self.name}".'
+            )
+            raise MFDataException(
+                mfdata_except=mfde,
+                model=self.model_name,
+                package=self.name_file._get_pname(),
+                message=message,
+            )
+        try:
+            file_mgr = self.simulation_data.mfpath
+            model_rel_path = file_mgr.model_relative_path[self.name]
+            # update namefile package data with new name
+            new_rec_array = None
+            old_leaf = os.path.split(package.filename)[1]
+            for item in package_data:
+                leaf = os.path.split(item[1])[1]
+                if leaf == old_leaf:
+                    item[1] = os.path.join(model_rel_path, new_name)
+
+                if new_rec_array is None:
+                    new_rec_array = np.rec.array(
+                        [item.tolist()], package_data.dtype
+                    )
+                else:
+                    new_rec_array = np.hstack((item, new_rec_array))
+        except:
+            type_, value_, traceback_ = sys.exc_info()
+            raise MFDataException(
+                self.structure.get_model(),
+                self.structure.get_package(),
+                self._path,
+                "updating package filename",
+                self.structure.name,
+                inspect.stack()[0][3],
+                type_,
+                value_,
+                traceback_,
+                None,
+                self._simulation_data.debug,
+            )
+        try:
+            self.name_file.packages.set_data(new_rec_array)
+        except MFDataException as mfde:
+            message = (
+                "Error occurred while updating package names "
+                f'from name file in model "{self.name}".  Package name '
+                f"data:\n{new_rec_array}"
+            )
+            raise MFDataException(
+                mfdata_except=mfde,
+                model=self.model_name,
+                package=self.name_file._get_pname(),
+                message=message,
+            )
+
     def rename_all_packages(self, name):
         """Renames all package files in the model.
 
@@ -1171,11 +1569,28 @@ class MFModel(PackageContainer, ModelInterface):
                 <name>.<package ext>.
 
         """
+        nam_filename = f"{name}.nam"
+        self.simulation.rename_model_namefile(self, nam_filename)
+        self.name_file.filename = nam_filename
+        self.model_nam_file = nam_filename
         package_type_count = {}
-        self.name_file.filename = "{}.nam".format(name)
         for package in self.packagelist:
             if package.package_type not in package_type_count:
-                package.filename = "{}.{}".format(name, package.package_type)
+                base_filename, leaf = os.path.split(package.filename)
+                lleaf = leaf.split(".")
+                if len(lleaf) > 1:
+                    # keep existing extension
+                    ext = lleaf[-1]
+                else:
+                    # no extension found, create a new one
+                    ext = package.package_type
+                new_fileleaf = f"{name}.{ext}"
+                if base_filename != "":
+                    package.filename = os.path.join(
+                        base_filename, new_fileleaf
+                    )
+                else:
+                    package.filename = new_fileleaf
                 package_type_count[package.package_type] = 1
             else:
                 package_type_count[package.package_type] += 1
@@ -1186,7 +1601,11 @@ class MFModel(PackageContainer, ModelInterface):
                 )
 
     def set_all_data_external(
-        self, check_data=True, external_data_folder=None
+        self,
+        check_data=True,
+        external_data_folder=None,
+        base_name=None,
+        binary=False,
     ):
         """Sets the model's list and array data to be stored externally.
 
@@ -1199,10 +1618,19 @@ class MFModel(PackageContainer, ModelInterface):
                 Folder, relative to the simulation path or model relative path
                 (see use_model_relative_path parameter), where external data
                 will be stored
+            base_name: str
+                Base file name prefix for all files
+            binary: bool
+                Whether file will be stored as binary
 
         """
         for package in self.packagelist:
-            package.set_all_data_external(check_data, external_data_folder)
+            package.set_all_data_external(
+                check_data,
+                external_data_folder,
+                base_name,
+                binary,
+            )
 
     def set_all_data_internal(self, check_data=True):
         """Sets the model's list and array data to be stored externally.
@@ -1253,7 +1681,11 @@ class MFModel(PackageContainer, ModelInterface):
             package.package_type
         )
         if add_to_package_list and path in self._package_paths:
-            if not package_struct.multi_package_support:
+            if (
+                package_struct is not None
+                and not package_struct.multi_package_support
+                and not isinstance(package.parent_file, MFPackage)
+            ):
                 # package of this type already exists, replace it
                 self.remove_package(package.package_type)
                 if (
@@ -1294,8 +1726,18 @@ class MFModel(PackageContainer, ModelInterface):
         self._package_paths[path] = 1
 
         if package.package_type.lower() == "nam":
+            if not package.internal_package:
+                excpt_str = (
+                    "Unable to register nam file.  Do not create your own nam "
+                    "files.  Nam files are automatically created and managed "
+                    "for you by FloPy."
+                )
+                print(excpt_str)
+                raise FlopyException(excpt_str)
+
             return path, self.structure.name_file_struct_obj
 
+        package_extension = package.package_type
         if set_package_name:
             # produce a default package name
             if (
@@ -1307,12 +1749,29 @@ class MFModel(PackageContainer, ModelInterface):
                 for package_name in name_iter:
                     if package_name not in self.package_name_dict:
                         package.package_name = package_name
+                        suffix = package_name.split("_")
+                        if (
+                            len(suffix) > 1
+                            and datautil.DatumUtil.is_int(suffix[-1])
+                            and suffix[-1] != "0"
+                        ):
+                            # update file extension to make unique
+                            package_extension = (
+                                f"{package_extension}_{suffix[-1]}"
+                            )
                         break
             else:
                 package.package_name = package.package_type
 
         if set_package_filename:
-            package._filename = "{}.{}".format(self.name, package.package_type)
+            # filename uses model base name
+            package._filename = f"{self.name}.{package.package_type}"
+            if package._filename in self.package_filename_dict:
+                # auto generate a unique file name and register it
+                file_name = MFFileMgmt.unique_file_name(
+                    package._filename, self.package_filename_dict
+                )
+                package._filename = file_name
 
         if add_to_package_list:
             self._add_package(package, path)
@@ -1327,10 +1786,18 @@ class MFModel(PackageContainer, ModelInterface):
                     pkg_type = pkg_type[0:-1]
                 # Model Assumption - assuming all name files have a package
                 # recarray
+                file_mgr = self.simulation_data.mfpath
+                model_rel_path = file_mgr.model_relative_path[self.name]
+                if model_rel_path != ".":
+                    package_rel_path = os.path.join(
+                        model_rel_path, package.filename
+                    )
+                else:
+                    package_rel_path = package.filename
                 self.name_file.packages.update_record(
                     [
-                        "{}6".format(pkg_type),
-                        package._filename,
+                        f"{pkg_type}6",
+                        package_rel_path,
                         package.package_name,
                     ],
                     0,
@@ -1395,9 +1862,7 @@ class MFModel(PackageContainer, ModelInterface):
             # resolve dictionary name for package
             if dict_package_name is not None:
                 if parent_package is not None:
-                    dict_package_name = "{}_{}".format(
-                        parent_package.path[-1], ftype
-                    )
+                    dict_package_name = f"{parent_package.path[-1]}_{ftype}"
                 else:
                     # use dict_package_name as the base name
                     if ftype in self._ftype_num_dict:
@@ -1413,12 +1878,12 @@ class MFModel(PackageContainer, ModelInterface):
                 if ftype in self._ftype_num_dict:
                     self._ftype_num_dict[ftype] += 1
                 else:
-                    self._ftype_num_dict[ftype] = 0
+                    self._ftype_num_dict[ftype] = 1
                 if pname is not None:
                     dict_package_name = pname
                 else:
-                    dict_package_name = "{}_{}".format(
-                        ftype, self._ftype_num_dict[ftype]
+                    dict_package_name = (
+                        f"{ftype}-{self._ftype_num_dict[ftype]}"
                     )
         else:
             dict_package_name = ftype
@@ -1436,18 +1901,20 @@ class MFModel(PackageContainer, ModelInterface):
             pname=dict_package_name,
             loading_package=True,
             parent_file=parent_package,
+            _internal_package=True,
         )
         try:
             package.load(strict)
         except ReadAsArraysException:
             #  create ReadAsArrays package and load it instead
-            package_obj = self.package_factory("{}a".format(ftype), model_type)
+            package_obj = self.package_factory(f"{ftype}a", model_type)
             package = package_obj(
                 self,
                 filename=fname,
                 pname=dict_package_name,
                 loading_package=True,
                 parent_file=parent_package,
+                _internal_package=True,
             )
             package.load(strict)
 
@@ -1491,10 +1958,19 @@ class MFModel(PackageContainer, ModelInterface):
                 Empty list is returned if filename_base is not None. Otherwise
                 a list of matplotlib.pyplot.axis are returned.
         """
-        from flopy.plot.plotutil import PlotUtilities
+        from ..plot.plotutil import PlotUtilities
 
         axes = PlotUtilities._plot_model_helper(
             self, SelPackList=SelPackList, **kwargs
         )
 
         return axes
+
+    @staticmethod
+    def _resolve_idomain(idomain, botm):
+        if idomain is None:
+            if botm is None:
+                return idomain
+            else:
+                return np.ones_like(botm)
+        return idomain

@@ -7,10 +7,12 @@ User's Manual.
 
 """
 
+import warnings
+
 import numpy as np
+
 from ..pakbase import Package
 from ..utils import Util2d, Util3d
-import warnings
 
 
 class Mt3dBtn(Package):
@@ -228,37 +230,20 @@ class Mt3dBtn(Package):
         extension="btn",
         unitnumber=None,
         filenames=None,
-        **kwargs
+        **kwargs,
     ):
-
         if unitnumber is None:
             unitnumber = Mt3dBtn._defaultunit()
         elif unitnumber == 0:
             unitnumber = Mt3dBtn._reservedunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [Mt3dBtn._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         # Set these variables from the Modflow model (self.parent.mf) unless
@@ -370,14 +355,14 @@ class Mt3dBtn(Package):
         self.sconc.append(u3d)
         if ncomp > 1:
             for icomp in range(2, ncomp + 1):
-                name = "sconc" + str(icomp)
+                name = f"sconc{icomp}"
                 val = 0.0
                 if name in kwargs:
                     val = kwargs.pop(name)
                 else:
                     print(
-                        "BTN: setting sconc for component {} "
-                        "to zero, kwarg name {}".format(icomp, name)
+                        f"BTN: setting sconc for component {icomp} "
+                        f"to zero, kwarg name {name}"
                     )
                 u3d = Util3d(
                     model,
@@ -393,8 +378,7 @@ class Mt3dBtn(Package):
         # Check to make sure that all kwargs have been consumed
         if len(list(kwargs.keys())) > 0:
             raise Exception(
-                "BTN error: unrecognized kwargs: "
-                + " ".join(list(kwargs.keys()))
+                f"BTN error: unrecognized kwargs: {' '.join(list(kwargs.keys()))}"
             )
 
         # Finally add self to parent's package list and return
@@ -550,7 +534,7 @@ class Mt3dBtn(Package):
                 array_free_format=False,
             )
         else:
-            thickness = mf.modelgrid.thick
+            thickness = mf.modelgrid.cell_thickness
             self.dz = Util3d(
                 self.parent,
                 (nlay, nrow, ncol),
@@ -689,32 +673,35 @@ class Mt3dBtn(Package):
         f_btn = open(self.fn_path, "w")
 
         # A1,2
-        f_btn.write("#{0:s}\n#{1:s}\n".format(self.heading1, self.heading2))
+        f_btn.write(f"#{self.heading1}\n#{self.heading2}\n")
 
         # A3; Keywords
         # Build a string of the active keywords
-        str1 = ""
-        if self.MFStyleArr:
-            str1 += " MODFLOWSTYLEARRAYS"
-        if self.DRYCell:
-            str1 += " DRYCELL"
-        if self.Legacy99Stor:
-            str1 += " LEGACY99STORAGE"
-        if self.FTLPrint:
-            str1 += " FTLPRINT"
-        if self.NoWetDryPrint:
-            str1 += " NOWETDRYPRINT"
-        if self.OmitDryBud:
-            str1 += " OMITDRYCELLBUDGET"
-        if self.AltWTSorb:
-            str1 += " ALTWTSORB"
+        if (
+            self.parent.version == "mt3d-usgs"
+        ):  # Keywords not supported by MT3Dms
+            str1 = ""
+            if self.MFStyleArr:
+                str1 += " MODFLOWSTYLEARRAYS"
+            if self.DRYCell:
+                str1 += " DRYCELL"
+            if self.Legacy99Stor:
+                str1 += " LEGACY99STORAGE"
+            if self.FTLPrint:
+                str1 += " FTLPRINT"
+            if self.NoWetDryPrint:
+                str1 += " NOWETDRYPRINT"
+            if self.OmitDryBud:
+                str1 += " OMITDRYCELLBUDGET"
+            if self.AltWTSorb:
+                str1 += " ALTWTSORB"
 
-        if str1 != "":
-            f_btn.write(str1 + "\n")
+            if str1 != "":
+                f_btn.write(str1 + "\n")
 
         # A3
         f_btn.write(
-            "{0:10d}{1:10d}{2:10d}{3:10d}{4:10d}{5:10d}\n".format(
+            "{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}\n".format(
                 self.nlay,
                 self.nrow,
                 self.ncol,
@@ -725,31 +712,29 @@ class Mt3dBtn(Package):
         )
 
         # A4
-        f_btn.write(
-            "{0:4s}{1:4s}{2:4s}\n".format(self.tunit, self.lunit, self.munit)
-        )
+        f_btn.write(f"{self.tunit:4s}{self.lunit:4s}{self.munit:4s}\n")
 
         # A5
         if self.parent.adv != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.dsp != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.ssm != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.rct != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.gcg != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         f_btn.write("\n")
 
         # A6
@@ -780,25 +765,23 @@ class Mt3dBtn(Package):
             f_btn.write(self.sconc[s].get_file_entry())
 
         # A14
-        f_btn.write("{0:10.0E}{1:10.2E}\n".format(self.cinact, self.thkmin))
+        f_btn.write(f"{self.cinact:10.0E}{self.thkmin:10.2E}\n")
 
         # A15
         f_btn.write(
-            "{0:10d}{1:10d}{2:10d}{3:10d}".format(
-                self.ifmtcn, self.ifmtnp, self.ifmtrf, self.ifmtdp
-            )
+            f"{self.ifmtcn:10d}{self.ifmtnp:10d}{self.ifmtrf:10d}{self.ifmtdp:10d}"
         )
         if self.savucn == True:
             ss = "T"
         else:
             ss = "F"
-        f_btn.write("{0:>10s}\n".format(ss))
+        f_btn.write(f"{ss:>10s}\n")
 
         # A16, A17
         if self.timprs is None:
-            f_btn.write("{0:10d}\n".format(self.nprs))
+            f_btn.write(f"{self.nprs:10d}\n")
         else:
-            f_btn.write("{0:10d}\n".format(len(self.timprs)))
+            f_btn.write(f"{len(self.timprs):10d}\n")
             timprs = Util2d(
                 self.parent,
                 (len(self.timprs),),
@@ -812,13 +795,13 @@ class Mt3dBtn(Package):
 
         # A18, A19
         if self.obs is None:
-            f_btn.write("{0:10d}{1:10d}\n".format(0, self.nprobs))
+            f_btn.write(f"{0:10d}{self.nprobs:10d}\n")
         else:
             nobs = self.obs.shape[0]
-            f_btn.write("{0:10d}{1:10d}\n".format(nobs, self.nprobs))
+            f_btn.write(f"{nobs:10d}{self.nprobs:10d}\n")
             for i in range(nobs):
                 f_btn.write(
-                    "{0:10d}{1:10d}{2:10d}\n".format(
+                    "{:10d}{:10d}{:10d}\n".format(
                         self.obs[i, 0] + 1,
                         self.obs[i, 1] + 1,
                         self.obs[i, 2] + 1,
@@ -830,19 +813,17 @@ class Mt3dBtn(Package):
             ss = "T"
         else:
             ss = "F"
-        f_btn.write("{0:>10s}{1:10d}\n".format(ss, self.nprmas))
+        f_btn.write(f"{ss:>10s}{self.nprmas:10d}\n")
 
         # A21, 22, 23 PERLEN, NSTP, TSMULT
         for t in range(self.nper):
-            s = "{0:10G}{1:10d}{2:10G}".format(
-                self.perlen[t], self.nstp[t], self.tsmult[t]
-            )
+            s = f"{self.perlen[t]:10G}{self.nstp[t]:10d}{self.tsmult[t]:10G}"
             if self.ssflag is not None:
                 s += " " + self.ssflag[t]
             s += "\n"
             f_btn.write(s)
             f_btn.write(
-                "{0:10.4G}{1:10d}{2:10.4G}{3:10.4G}\n".format(
+                "{:10.4G}{:10d}{:10.4G}{:10.4G}\n".format(
                     self.dt0[t],
                     self.mxstrn[t],
                     self.ttsmult[t],
@@ -894,12 +875,12 @@ class Mt3dBtn(Package):
             print("   loading COMMENT LINES A1 AND A2...")
         line = f.readline()
         if model.verbose:
-            print("A1: ".format(line.strip()))
+            print(f"A1: {line.strip()}")
 
         # A2
         line = f.readline()
         if model.verbose:
-            print("A2: ".format(line.strip()))
+            print(f"A2: {line.strip()}")
 
         # New keyword options in MT3D-USGS are found here
         line = f.readline()
@@ -917,7 +898,7 @@ class Mt3dBtn(Package):
             m_arr[0].strip().isdigit() is not True
         ):  # If m_arr[0] is not a digit, it is a keyword
             if model.verbose:
-                print("   loading optional keywords: {}".format(line.strip()))
+                print(f"   loading optional keywords: {line.strip()}")
             for i in range(0, len(m_arr)):
                 if m_arr[i].upper() == "MODFLOWSTYLEARRAYS":
                     MFStyleArr = True
@@ -956,12 +937,12 @@ class Mt3dBtn(Package):
         except:
             mcomp = 1
         if model.verbose:
-            print("   NLAY {}".format(nlay))
-            print("   NROW {}".format(nrow))
-            print("   NCOL {}".format(ncol))
-            print("   NPER {}".format(nper))
-            print("   NCOMP {}".format(ncomp))
-            print("   MCOMP {}".format(mcomp))
+            print(f"   NLAY {nlay}")
+            print(f"   NROW {nrow}")
+            print(f"   NCOL {ncol}")
+            print(f"   NPER {nper}")
+            print(f"   NCOMP {ncomp}")
+            print(f"   MCOMP {mcomp}")
 
         if model.verbose:
             print("   loading TUNIT, LUNIT, MUNIT...")
@@ -970,21 +951,21 @@ class Mt3dBtn(Package):
         lunit = line[4:8]
         munit = line[8:12]
         if model.verbose:
-            print("   TUNIT {}".format(tunit))
-            print("   LUNIT {}".format(lunit))
-            print("   MUNIT {}".format(munit))
+            print(f"   TUNIT {tunit}")
+            print(f"   LUNIT {lunit}")
+            print(f"   MUNIT {munit}")
 
         if model.verbose:
             print("   loading TRNOP...")
         trnop = f.readline()[:20].strip().split()
         if model.verbose:
-            print("   TRNOP {}".format(trnop))
+            print(f"   TRNOP {trnop}")
 
         if model.verbose:
             print("   loading LAYCON...")
         laycon = Util2d.load_txt((nlay,), f, np.int32, "(40I2)")
         if model.verbose:
-            print("   LAYCON {}".format(laycon))
+            print(f"   LAYCON {laycon}")
 
         if model.verbose:
             print("   loading DELR...")
@@ -998,7 +979,7 @@ class Mt3dBtn(Package):
             array_format="mt3d",
         )
         if model.verbose:
-            print("   DELR {}".format(delr))
+            print(f"   DELR {delr}")
 
         if model.verbose:
             print("   loading DELC...")
@@ -1012,7 +993,7 @@ class Mt3dBtn(Package):
             array_format="mt3d",
         )
         if model.verbose:
-            print("   DELC {}".format(delc))
+            print(f"   DELC {delc}")
 
         if model.verbose:
             print("   loading HTOP...")
@@ -1026,7 +1007,7 @@ class Mt3dBtn(Package):
             array_format="mt3d",
         )
         if model.verbose:
-            print("   HTOP {}".format(htop))
+            print(f"   HTOP {htop}")
 
         if model.verbose:
             print("   loading DZ...")
@@ -1040,7 +1021,7 @@ class Mt3dBtn(Package):
             array_format="mt3d",
         )
         if model.verbose:
-            print("   DZ {}".format(dz))
+            print(f"   DZ {dz}")
 
         if model.verbose:
             print("   loading PRSITY...")
@@ -1054,7 +1035,7 @@ class Mt3dBtn(Package):
             array_format="mt3d",
         )
         if model.verbose:
-            print("   PRSITY {}".format(prsity))
+            print(f"   PRSITY {prsity}")
 
         if model.verbose:
             print("   loading ICBUND...")
@@ -1068,7 +1049,7 @@ class Mt3dBtn(Package):
             array_format="mt3d",
         )
         if model.verbose:
-            print("   ICBUND {}".format(icbund))
+            print(f"   ICBUND {icbund}")
 
         if model.verbose:
             print("   loading SCONC...")
@@ -1084,9 +1065,9 @@ class Mt3dBtn(Package):
         )
         if ncomp > 1:
             for icomp in range(2, ncomp + 1):
-                name = "sconc" + str(icomp)
+                name = f"sconc{icomp}"
                 if model.verbose:
-                    print("   loading {}...".format(name))
+                    print(f"   loading {name}...")
                 u3d = Util3d.load(
                     f,
                     model,
@@ -1098,7 +1079,7 @@ class Mt3dBtn(Package):
                 )
                 kwargs[name] = u3d
         if model.verbose:
-            print("   SCONC {}".format(sconc))
+            print(f"   SCONC {sconc}")
 
         if model.verbose:
             print("   loading CINACT, THCKMIN...")
@@ -1109,8 +1090,8 @@ class Mt3dBtn(Package):
         except:
             thkmin = 0.01
         if model.verbose:
-            print("   CINACT {}".format(cinact))
-            print("   THKMIN {}".format(thkmin))
+            print(f"   CINACT {cinact}")
+            print(f"   THKMIN {thkmin}")
 
         if model.verbose:
             print("   loading IFMTCN, IFMTNP, IFMTRF, IFMTDP, SAVUCN...")
@@ -1123,18 +1104,18 @@ class Mt3dBtn(Package):
         if "t" in line[40:50].lower():
             savucn = True
         if model.verbose:
-            print("   IFMTCN {}".format(ifmtcn))
-            print("   IFMTNP {}".format(ifmtnp))
-            print("   IFMTRF {}".format(ifmtrf))
-            print("   IFMTDP {}".format(ifmtdp))
-            print("   SAVUCN {}".format(savucn))
+            print(f"   IFMTCN {ifmtcn}")
+            print(f"   IFMTNP {ifmtnp}")
+            print(f"   IFMTRF {ifmtrf}")
+            print(f"   IFMTDP {ifmtdp}")
+            print(f"   SAVUCN {savucn}")
 
         if model.verbose:
             print("   loading NPRS...")
         line = f.readline()
         nprs = int(line[0:10])
         if model.verbose:
-            print("   NPRS {}".format(nprs))
+            print(f"   NPRS {nprs}")
 
         timprs = None
         if nprs > 0:
@@ -1142,7 +1123,7 @@ class Mt3dBtn(Package):
                 print("   loading TIMPRS...")
             timprs = Util2d.load_txt((nprs,), f, np.float32, "(8F10.0)")
             if model.verbose:
-                print("   TIMPRS {}".format(timprs))
+                print(f"   TIMPRS {timprs}")
 
         if model.verbose:
             print("   loading NOBS, NPROBS...")
@@ -1153,8 +1134,8 @@ class Mt3dBtn(Package):
         except:
             nprobs = 1
         if model.verbose:
-            print("   NOBS {}".format(nobs))
-            print("   NPROBS {}".format(nprobs))
+            print(f"   NOBS {nobs}")
+            print(f"   NPROBS {nprobs}")
 
         obs = None
         if nobs > 0:
@@ -1169,7 +1150,7 @@ class Mt3dBtn(Package):
                 obs.append([k, i, j])
             obs = np.array(obs) - 1
             if model.verbose:
-                print("   OBS {}".format(obs))
+                print(f"   OBS {obs}")
 
         if model.verbose:
             print("   loading CHKMAS, NPRMAS...")
@@ -1182,8 +1163,8 @@ class Mt3dBtn(Package):
         except:
             nprmas = 1
         if model.verbose:
-            print("   CHKMAS {}".format(chkmas))
-            print("   NPRMAS {}".format(nprmas))
+            print(f"   CHKMAS {chkmas}")
+            print(f"   NPRMAS {nprmas}")
 
         if model.verbose:
             print(
@@ -1219,15 +1200,15 @@ class Mt3dBtn(Package):
             ttsmax.append(float(line[30:40]))
 
         if model.verbose:
-            print("   PERLEN {}".format(perlen))
-            print("   NSTP {}".format(nstp))
-            print("   TSMULT {}".format(tsmult))
-            print("   SSFLAG {}".format(ssflag))
-            print("   TSLNGH {}".format(tslngh))
-            print("   DT0 {}".format(dt0))
-            print("   MXSTRN {}".format(mxstrn))
-            print("   TTSMULT {}".format(ttsmult))
-            print("   TTSMAX {}".format(ttsmax))
+            print(f"   PERLEN {perlen}")
+            print(f"   NSTP {nstp}")
+            print(f"   TSMULT {tsmult}")
+            print(f"   SSFLAG {ssflag}")
+            print(f"   TSLNGH {tslngh}")
+            print(f"   DT0 {dt0}")
+            print(f"   MXSTRN {mxstrn}")
+            print(f"   TTSMULT {ttsmult}")
+            print(f"   TTSMAX {ttsmax}")
 
         if openfile:
             f.close()
@@ -1289,7 +1270,7 @@ class Mt3dBtn(Package):
             ttsmax=ttsmax,
             unitnumber=unitnumber,
             filenames=filenames,
-            **kwargs
+            **kwargs,
         )
 
     @staticmethod

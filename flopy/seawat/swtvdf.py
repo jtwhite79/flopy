@@ -1,7 +1,7 @@
-import sys
 import numpy as np
+
 from ..pakbase import Package
-from ..utils import Util2d, Util3d
+from ..utils import Util3d
 from ..utils.util_array import Transient3d
 
 
@@ -205,35 +205,18 @@ class SeawatVdf(Package):
         extension="vdf",
         unitnumber=None,
         filenames=None,
-        **kwargs
+        **kwargs,
     ):
-
         if unitnumber is None:
             unitnumber = SeawatVdf._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [SeawatVdf._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
@@ -286,7 +269,7 @@ class SeawatVdf(Package):
         )
 
         # item 2
-        f_vdf.write("%10.4f%10.4f\n" % (self.densemin, self.densemax))
+        f_vdf.write(f"{self.densemin:10.4f}{self.densemax:10.4f}\n")
 
         # item 3
         if self.nswtcpl > 1 or self.nswtcpl == -1:
@@ -295,11 +278,9 @@ class SeawatVdf(Package):
         # item 4
         if self.mtdnconc >= 0:
             if self.nsrhoeos == 1:
-                f_vdf.write("%10.4f%10.4f\n" % (self.denseref, self.denseslp))
+                f_vdf.write(f"{self.denseref:10.4f}{self.denseslp:10.4f}\n")
             else:
-                f_vdf.write(
-                    "%10.4f%10.4f\n" % (self.denseref, self.denseslp[0])
-                )
+                f_vdf.write(f"{self.denseref:10.4f}{self.denseslp[0]:10.4f}\n")
 
         elif self.mtdnconc == -1:
             f_vdf.write(
@@ -324,10 +305,8 @@ class SeawatVdf(Package):
 
         # Transient DENSE array
         if self.mtdnconc == 0:
-
             nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
             for kper in range(nper):
-
                 itmp, file_entry_dense = self.dense.get_kper_entry(kper)
 
                 # item 6 (and possibly 7)
@@ -381,7 +360,7 @@ class SeawatVdf(Package):
         """
 
         if model.verbose:
-            sys.stdout.write("loading vdf package file...\n")
+            print("loading vdf package file...")
 
         # Open file, if necessary
         openfile = not hasattr(f, "read")
@@ -409,10 +388,10 @@ class SeawatVdf(Package):
         nswtcpl = int(t[2])
         iwtable = int(t[3])
         if model.verbose:
-            print("   MT3DRHOFLG {}".format(mt3drhoflg))
-            print("   MFNADVFD {}".format(mfnadvfd))
-            print("   NSWTCPL {}".format(nswtcpl))
-            print("   IWTABLE {}".format(iwtable))
+            print(f"   MT3DRHOFLG {mt3drhoflg}")
+            print(f"   MFNADVFD {mfnadvfd}")
+            print(f"   NSWTCPL {nswtcpl}")
+            print(f"   IWTABLE {iwtable}")
 
         # Item 2 -- DENSEMIN DENSEMAX
         if model.verbose:
@@ -483,23 +462,20 @@ class SeawatVdf(Package):
         indense = None
         dense = None
         if mt3drhoflg == 0:
-
             # Create dense as a Transient3D record
             dense = {}
 
             for iper in range(nper):
-
                 if model.verbose:
                     print(
-                        "   loading INDENSE "
-                        "for stress period {}...".format(iper + 1)
+                        f"   loading INDENSE for stress period {iper + 1}..."
                     )
                 line = f.readline()
                 t = line.strip().split()
                 indense = int(t[0])
 
                 if indense > 0:
-                    name = "DENSE_StressPeriod_{}".format(iper)
+                    name = f"DENSE_StressPeriod_{iper}"
                     t = Util3d.load(
                         f,
                         model,

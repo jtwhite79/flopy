@@ -1,8 +1,8 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
-from ..data.mfdatautil import ArrayTemplateGenerator
+from ..data.mfdatautil import ArrayTemplateGenerator, ListTemplateGenerator
 
 
 class ModflowGwfsto(mfpackage.MFPackage):
@@ -12,7 +12,7 @@ class ModflowGwfsto(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -24,6 +24,19 @@ class ModflowGwfsto(mfpackage.MFPackage):
     storagecoefficient : boolean
         * storagecoefficient (boolean) keyword to indicate that the SS array is
           read as storage coefficient rather than specific storage.
+    ss_confined_only : boolean
+        * ss_confined_only (boolean) keyword to indicate that compressible
+          storage is only calculated for a convertible cell (ICONVERT>0) when
+          the cell is under confined conditions (head greater than or equal to
+          the top of the cell). This option has no effect on cells that are
+          marked as being always confined (ICONVERT=0). This option is
+          identical to the approach used to calculate storage changes under
+          confined conditions in MODFLOW-2005.
+    perioddata : {varname:data} or tvs_perioddata data
+        * Contains data for the tvs package. Data can be stored in a dictionary
+          containing data for the tvs package with variable names as keys and
+          package data as values. Data just for the perioddata variable is also
+          acceptable. See tvs package documentation for more information.
     iconvert : [integer]
         * iconvert (integer) is a flag for each cell that specifies whether or
           not a cell is convertible for the storage calculation. 0 indicates
@@ -61,6 +74,9 @@ class ModflowGwfsto(mfpackage.MFPackage):
 
     """
 
+    tvs_filerecord = ListTemplateGenerator(
+        ("gwf6", "sto", "options", "tvs_filerecord")
+    )
     iconvert = ArrayTemplateGenerator(("gwf6", "sto", "griddata", "iconvert"))
     ss = ArrayTemplateGenerator(("gwf6", "sto", "griddata", "ss"))
     sy = ArrayTemplateGenerator(("gwf6", "sto", "griddata", "sy"))
@@ -69,6 +85,9 @@ class ModflowGwfsto(mfpackage.MFPackage):
     dfn_file_name = "gwf-sto.dfn"
 
     dfn = [
+        [
+            "header",
+        ],
         [
             "block options",
             "name save_flows",
@@ -82,6 +101,55 @@ class ModflowGwfsto(mfpackage.MFPackage):
             "type keyword",
             "reader urword",
             "optional true",
+        ],
+        [
+            "block options",
+            "name ss_confined_only",
+            "type keyword",
+            "reader urword",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name tvs_filerecord",
+            "type record tvs6 filein tvs_filename",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+            "construct_package tvs",
+            "construct_data tvs_perioddata",
+            "parameter_name perioddata",
+        ],
+        [
+            "block options",
+            "name tvs6",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name filein",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name tvs_filename",
+            "type string",
+            "preserve_case true",
+            "in_record true",
+            "reader urword",
+            "optional false",
+            "tagged false",
         ],
         [
             "block griddata",
@@ -154,6 +222,8 @@ class ModflowGwfsto(mfpackage.MFPackage):
         loading_package=False,
         save_flows=None,
         storagecoefficient=None,
+        ss_confined_only=None,
+        perioddata=None,
         iconvert=0,
         ss=1.0e-5,
         sy=0.15,
@@ -161,16 +231,23 @@ class ModflowGwfsto(mfpackage.MFPackage):
         transient=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "sto", filename, pname, loading_package, parent_file
+            model, "sto", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
         self.save_flows = self.build_mfdata("save_flows", save_flows)
         self.storagecoefficient = self.build_mfdata(
             "storagecoefficient", storagecoefficient
+        )
+        self.ss_confined_only = self.build_mfdata(
+            "ss_confined_only", ss_confined_only
+        )
+        self._tvs_filerecord = self.build_mfdata("tvs_filerecord", None)
+        self._tvs_package = self.build_child_package(
+            "tvs", perioddata, "tvs_perioddata", self._tvs_filerecord
         )
         self.iconvert = self.build_mfdata("iconvert", iconvert)
         self.ss = self.build_mfdata("ss", ss)

@@ -1,15 +1,20 @@
-from __future__ import print_function
 import os
-import numpy as np
 import subprocess
+import warnings
+from pathlib import Path
+from typing import Union
 
-# flopy imports
-from ..modflow.mfdisu import ModflowDisU
+import numpy as np
+
+from ..discretization import StructuredGrid
+from ..export.shapefile_utils import shp2recarray
+from ..mbase import resolve_exe
 from ..mf6.modflow import ModflowGwfdis
+from ..mfusg.mfusgdisu import MfUsgDisU
+from ..modflow import ModflowDis
+from ..utils import import_optional_dependency
+from ..utils.flopy_io import relpath_safe
 from .util_array import Util2d  # read1d,
-from ..export.shapefile_utils import import_shapefile, shp2recarray
-from ..mbase import which
-
 
 # todo
 # creation of line and polygon shapefiles from features (holes!)
@@ -33,7 +38,9 @@ def read1d(f, a):
     return a
 
 
-def features_to_shapefile(features, featuretype, filename):
+def features_to_shapefile(
+    features, featuretype, filename: Union[str, os.PathLike]
+):
     """
     Write a shapefile for the features of type featuretype.
 
@@ -50,8 +57,8 @@ def features_to_shapefile(features, featuretype, filename):
              shapefile.Shapes object
     featuretype : str
         Must be 'point', 'line', 'linestring', or 'polygon'
-    filename : string
-        name of the shapefile to write
+    filename : str or PathLike
+        The shapefile to write (extension is optional)
 
     Returns
     -------
@@ -60,7 +67,7 @@ def features_to_shapefile(features, featuretype, filename):
     """
     from .geospatial_utils import GeoSpatialCollection
 
-    shapefile = import_shapefile(check_version=True)
+    shapefile = import_optional_dependency("shapefile")
 
     if featuretype.lower() == "line":
         featuretype = "LineString"
@@ -73,46 +80,47 @@ def features_to_shapefile(features, featuretype, filename):
         "linestring",
         "polygon",
     ]:
-        raise Exception("Unrecognized feature type: {}".format(featuretype))
+        raise ValueError(f"Unrecognized feature type: {featuretype}")
 
     if featuretype.lower() in ("line", "linestring"):
-        wr = shapefile.Writer(filename, shapeType=shapefile.POLYLINE)
+        wr = shapefile.Writer(str(filename), shapeType=shapefile.POLYLINE)
         wr.field("SHAPEID", "N", 20, 0)
         for i, line in enumerate(features):
-            wr.line(line.__geo_interface__["coordinates"])
+            wr.line([line.__geo_interface__["coordinates"]])
             wr.record(i)
 
     elif featuretype.lower() == "point":
-        wr = shapefile.Writer(filename, shapeType=shapefile.POINT)
+        wr = shapefile.Writer(str(filename), shapeType=shapefile.POINT)
         wr.field("SHAPEID", "N", 20, 0)
         for i, point in enumerate(features):
             wr.point(*point.__geo_interface__["coordinates"])
             wr.record(i)
 
     elif featuretype.lower() == "polygon":
-        wr = shapefile.Writer(filename, shapeType=shapefile.POLYGON)
+        wr = shapefile.Writer(str(filename), shapeType=shapefile.POLYGON)
         wr.field("SHAPEID", "N", 20, 0)
         for i, polygon in enumerate(features):
             wr.poly(polygon.__geo_interface__["coordinates"])
             wr.record(i)
 
     wr.close()
-    return
 
 
-def ndarray_to_asciigrid(fname, a, extent, nodata=1.0e30):
+def ndarray_to_asciigrid(
+    fname: Union[str, os.PathLike], a, extent, nodata=1.0e30
+):
     # extent info
     xmin, xmax, ymin, ymax = extent
     ncol, nrow = a.shape
     dx = (xmax - xmin) / ncol
     assert dx == (ymax - ymin) / nrow
     # header
-    header = "ncols     {}\n".format(ncol)
-    header += "nrows    {}\n".format(nrow)
-    header += "xllcorner {}\n".format(xmin)
-    header += "yllcorner {}\n".format(ymin)
-    header += "cellsize {}\n".format(dx)
-    header += "NODATA_value {}\n".format(float(nodata))
+    header = f"ncols     {ncol}\n"
+    header += f"nrows    {nrow}\n"
+    header += f"xllcorner {xmin}\n"
+    header += f"yllcorner {ymin}\n"
+    header += f"cellsize {dx}\n"
+    header += f"NODATA_value {float(nodata)}\n"
     # replace nan with nodata
     idx = np.isnan(a)
     a[idx] = float(nodata)
@@ -120,7 +128,6 @@ def ndarray_to_asciigrid(fname, a, extent, nodata=1.0e30):
     with open(fname, "wb") as f:
         f.write(header.encode("ascii"))
         np.savetxt(f, a, fmt="%15.6e")
-    return
 
 
 def get_ia_from_iac(iac):
@@ -173,9 +180,11 @@ class Gridgen:
 
     Parameters
     ----------
-    dis : flopy.modflow.ModflowDis
-        Flopy discretization object
-    model_ws : str
+    modelgrid : flopy.discretization.StructuredGrid
+        Flopy StructuredGrid object. Note this also accepts ModflowDis and
+        ModflowGwfdis objects, however it is deprecated and support will be
+        removed in version 3.3.7
+    model_ws : str or PathLike
         workspace location for creating gridgen files (default is '.')
     exe_name : str
         path and name of the gridgen program. (default is gridgen)
@@ -186,6 +195,15 @@ class Gridgen:
         If true, Gridgen's GRID_TO_USGDATA command will connect layers
         where intermediate layers are inactive.
         (default is False)
+    **kwargs
+        verical_smoothing_level : int
+            maximum level difference between two vertically adjacent cells.
+            Adjust with caution, as adjustments can cause unexpected results
+            to simulated flows
+        horizontal_smoothing_level : int
+            maximum level difference between two horizontally adjacent cells.
+            Adjust with caution, as adjustments can cause unexpected results
+            to simulated flows
 
     Notes
     -----
@@ -196,41 +214,51 @@ class Gridgen:
 
     def __init__(
         self,
-        dis,
-        model_ws=".",
-        exe_name="gridgen",
+        modelgrid,
+        model_ws: Union[str, os.PathLike] = os.curdir,
+        exe_name: Union[str, os.PathLike] = "gridgen",
         surface_interpolation="replicate",
         vertical_pass_through=False,
+        **kwargs,
     ):
-        self.dis = dis
-        if isinstance(dis, ModflowGwfdis):
-            self.nlay = self.dis.nlay.get_data()
-            self.nrow = self.dis.nrow.get_data()
-            self.ncol = self.dis.ncol.get_data()
-            self.modelgrid = self.dis.parent.modelgrid
+        if isinstance(modelgrid, StructuredGrid):
+            if modelgrid.top is None or modelgrid.botm is None:
+                raise AssertionError(
+                    "A complete modelgrid must be supplied to use Gridgen"
+                )
+
+            self.modelgrid = modelgrid
+
+        elif isinstance(modelgrid, (ModflowGwfdis, ModflowDis)):
+            warnings.warn(
+                "Supplying a dis object is deprecated, and support will be "
+                "removed in version 3.3.7. Please supply StructuredGrid."
+            )
+            # this is actually a DIS file
+            self.modelgrid = modelgrid.parent.modelgrid
+
         else:
-            self.nlay = self.dis.nlay
-            self.nrow = self.dis.nrow
-            self.ncol = self.dis.ncol
-            self.modelgrid = self.dis.parent.modelgrid
+            raise TypeError(
+                "A StructuredGrid object must be supplied to Gridgen"
+            )
+
+        self.nlay = self.modelgrid.nlay
+        self.nrow = self.modelgrid.nrow
+        self.ncol = self.modelgrid.ncol
 
         self.nodes = 0
         self.nja = 0
-        self.nodelay = np.zeros((self.nlay), dtype=int)
+        self.nodelay = np.zeros((self.nlay,), dtype=int)
         self._vertdict = {}
-        self.model_ws = model_ws
-        exe_name = which(exe_name)
-        if exe_name is None:
-            raise Exception("Cannot find gridgen binary executable")
-        self.exe_name = os.path.abspath(exe_name)
+        self.model_ws = Path(model_ws).expanduser().absolute()
+        self.exe_name = resolve_exe(exe_name)
 
         # Set default surface interpolation for all surfaces (nlay + 1)
         surface_interpolation = surface_interpolation.upper()
         if surface_interpolation not in ["INTERPOLATE", "REPLICATE"]:
-            raise Exception(
-                "Error.  Unknown surface interpolation method: "
-                "{}.  Must be INTERPOLATE or "
-                "REPLICATE".format(surface_interpolation)
+            raise ValueError(
+                f"Unknown surface interpolation method {surface_interpolation}, "
+                "expected 'INTERPOLATE' or 'REPLICATE'"
             )
         self.surface_interpolation = [
             surface_interpolation for k in range(self.nlay + 1)
@@ -241,6 +269,12 @@ class Gridgen:
         if vertical_pass_through:
             self.vertical_pass_through = "True"
 
+        self.smoothing_level_vertical = kwargs.pop(
+            "smoothing_level_vertical", 1
+        )
+        self.smoothing_level_horizontal = kwargs.pop(
+            "smoothing_level_horizontal", 1
+        )
         # Set up a blank _active_domain list with None for each layer
         self._addict = {}
         self._active_domain = []
@@ -250,14 +284,10 @@ class Gridgen:
         # Set up a blank _refinement_features list with empty list for
         # each layer
         self._rfdict = {}
-        self._refinement_features = []
-        for k in range(self.nlay):
-            self._refinement_features.append([])
+        self._refinement_features = [[] for _ in range(self.nlay)]
 
         # Set up blank _elev and _elev_extent dictionaries
         self._asciigrid_dict = {}
-
-        return
 
     def set_surface_interpolation(
         self, isurf, type, elev=None, elev_extent=None
@@ -285,10 +315,10 @@ class Gridgen:
         assert 0 <= isurf <= self.nlay + 1
         type = type.upper()
         if type not in ["INTERPOLATE", "REPLICATE", "ASCIIGRID"]:
-            raise Exception(
-                "Error.  Unknown surface interpolation type: "
-                "{}.  Must be INTERPOLATE or "
-                "REPLICATE".format(type)
+            raise ValueError(
+                "Unknown surface interpolation type "
+                f"{type}, expected 'INTERPOLATE',"
+                "'REPLICATE', or 'ASCIIGRID'"
             )
         else:
             self.surface_interpolation[isurf] = type
@@ -296,51 +326,58 @@ class Gridgen:
         if type == "ASCIIGRID":
             if isinstance(elev, np.ndarray):
                 if elev_extent is None:
-                    raise Exception(
-                        "Error.  ASCIIGRID was specified but "
-                        "elev_extent was not."
+                    raise ValueError(
+                        "ASCIIGRID was specified but elev_extent was not."
                     )
                 try:
                     xmin, xmax, ymin, ymax = elev_extent
                 except:
-                    raise Exception(
-                        "Cannot cast elev_extent into xmin, xmax, "
-                        "ymin, ymax: {}".format(elev_extent)
+                    raise ValueError(
+                        f"Cannot unpack elev_extent as tuple (xmin, xmax, ymin, ymax): {elev_extent}"
                     )
 
-                nm = "_gridgen.lay{}.asc".format(isurf)
-                fname = os.path.join(self.model_ws, nm)
+                nm = f"_gridgen.lay{isurf}.asc"
+                fname = self.model_ws / nm
                 ndarray_to_asciigrid(fname, elev, elev_extent)
                 self._asciigrid_dict[isurf] = nm
 
             elif isinstance(elev, str):
                 if not os.path.isfile(os.path.join(self.model_ws, elev)):
-                    raise Exception(
-                        "Error.  elev is not a valid file: "
-                        "{}".format(os.path.join(self.model_ws, elev))
+                    raise ValueError(
+                        f"Elevation file not found: {os.path.join(self.model_ws, elev)}"
                     )
                 self._asciigrid_dict[isurf] = elev
             else:
-                raise Exception(
-                    "Error.  ASCIIGRID was specified but "
-                    "elev was not specified as a numpy ndarray or"
-                    "valid asciigrid file."
+                raise ValueError(
+                    "ASCIIGRID was specified but elevation was not provided as a numpy ndarray or asciigrid file."
                 )
-        return
+
+    def resolve_shapefile_path(self, p):
+        def _resolve(p):
+            # try expanding absolute path
+            path = Path(p).expanduser().absolute()
+            # try looking in workspace
+            return path if path.is_file() else self.model_ws / p
+
+        path = _resolve(p)
+        path = (
+            path if path.is_file() else _resolve(Path(p).with_suffix(".shp"))
+        )
+        return path if path.is_file() else None
 
     def add_active_domain(self, feature, layers):
         """
         Parameters
         ----------
-        feature : str or list
+        feature : str, path-like or array-like
             feature can be:
-                 a string containing the name of a polygon
-                 a list of polygons
-                 flopy.utils.geometry.Collection object of Polygons
-                 shapely.geometry.Collection object of Polygons
-                 geojson.GeometryCollection object of Polygons
-                 list of shapefile.Shape objects
-                 shapefile.Shapes object
+                a shapefile name (str) or Pathlike
+                a list of polygons
+                a flopy.utils.geometry.Collection object of Polygons
+                a shapely.geometry.Collection object of Polygons
+                a geojson.GeometryCollection object of Polygons
+                a list of shapefile.Shape objects
+                a shapefile.Shapes object
         layers : list
             A list of layers (zero based) for which this active domain
             applies.
@@ -354,39 +391,43 @@ class Gridgen:
         self.nodes = 0
         self.nja = 0
 
-        # Create shapefile or set shapefile to feature
-        adname = "ad{}".format(len(self._addict))
-        if isinstance(feature, list):
-            # Create a shapefile
-            adname_w_path = os.path.join(self.model_ws, adname)
-            features_to_shapefile(feature, "polygon", adname_w_path)
-            shapefile = adname
+        # expand shapefile path or create one from polygon feature
+        if isinstance(feature, (str, os.PathLike)):
+            shapefile_path = self.resolve_shapefile_path(feature)
+        elif isinstance(feature, (list, tuple, np.ndarray)):
+            shapefile_path = self.model_ws / f"ad{len(self._addict)}.shp"
+            features_to_shapefile(feature, "polygon", shapefile_path)
         else:
-            shapefile = feature
+            raise ValueError(
+                f"Feature must be a pathlike (shapefile) or array-like of geometries"
+            )
 
-        self._addict[adname] = shapefile
-        sn = os.path.join(self.model_ws, shapefile + ".shp")
-        assert os.path.isfile(sn), "Shapefile does not exist: {}".format(sn)
+        # make sure shapefile exists
+        assert (
+            shapefile_path and shapefile_path.is_file()
+        ), f"Shapefile does not exist: {shapefile_path}"
 
+        # store shapefile info
+        self._addict[shapefile_path.stem] = relpath_safe(
+            shapefile_path, self.model_ws
+        )
         for k in layers:
-            self._active_domain[k] = adname
-
-        return
+            self._active_domain[k] = shapefile_path.stem
 
     def add_refinement_features(self, features, featuretype, level, layers):
         """
         Parameters
         ----------
-        features : str, list, or collection object
+        features : str, path-like or array-like
             features can be
-                a string containing the name of a shapefile
+                a shapefile name (str) or Pathlike
                 a list of points, lines, or polygons
-                flopy.utils.geometry.Collection object
+                a flopy.utils.geometry.Collection object
                 a list of flopy.utils.geometry objects
-                shapely.geometry.Collection object
-                geojson.GeometryCollection object
+                a shapely.geometry.Collection object
+                a geojson.GeometryCollection object
                 a list of shapefile.Shape objects
-                shapefile.Shapes object
+                a shapefile.Shapes object
         featuretype : str
             Must be either 'point', 'line', or 'polygon'
         level : int
@@ -405,22 +446,29 @@ class Gridgen:
         self.nja = 0
 
         # Create shapefile or set shapefile to feature
-        rfname = "rf{}".format(len(self._rfdict))
-        if isinstance(features, list):
-            rfname_w_path = os.path.join(self.model_ws, rfname)
-            features_to_shapefile(features, featuretype, rfname_w_path)
-            shapefile = rfname
+        if isinstance(features, (str, os.PathLike)):
+            shapefile_path = self.resolve_shapefile_path(features)
+        elif isinstance(features, (list, tuple, np.ndarray)):
+            shapefile_path = self.model_ws / f"rf{len(self._rfdict)}.shp"
+            features_to_shapefile(features, featuretype, shapefile_path)
         else:
-            shapefile = features
+            raise ValueError(
+                f"Features must be a pathlike (shapefile) or array-like of geometries"
+            )
 
-        self._rfdict[rfname] = [shapefile, featuretype, level]
-        sn = os.path.join(self.model_ws, shapefile + ".shp")
-        assert os.path.isfile(sn), "Shapefile does not exist: {}".format(sn)
+        # make sure shapefile exists
+        assert (
+            shapefile_path and shapefile_path.is_file()
+        ), f"Shapefile does not exist: {shapefile_path}"
 
+        # store shapefile info
+        self._rfdict[shapefile_path.stem] = [
+            relpath_safe(shapefile_path, self.model_ws),
+            featuretype,
+            level,
+        ]
         for k in layers:
-            self._refinement_features[k].append(rfname)
-
-        return
+            self._refinement_features[k].append(shapefile_path.stem)
 
     def build(self, verbose=False):
         """
@@ -487,8 +535,6 @@ class Gridgen:
         shapename = os.path.join(self.model_ws, "qtgrid")
         self.qtra = shp2recarray(shapename)
 
-        return
-
     def get_vertices(self, nodenumber):
         """
         Return a list of 5 vertices for the cell.  The first vertex should
@@ -550,7 +596,7 @@ class Gridgen:
         f.close()
         assert os.path.isfile(
             fname
-        ), "Could not create export dfn file: {}".format(fname)
+        ), f"Could not create export dfn file: {fname}"
 
         # Export shapefiles
         cmds = [
@@ -635,8 +681,6 @@ class Gridgen:
                 buff,
             )
 
-        return
-
     def plot(
         self,
         ax=None,
@@ -646,7 +690,7 @@ class Gridgen:
         cmap="Dark2",
         a=None,
         masked_values=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Plot the grid.  This method will plot the grid using the shapefile
@@ -681,11 +725,7 @@ class Gridgen:
         pc : matplotlib.collections.PatchCollection
 
         """
-        try:
-            import matplotlib.pyplot as plt
-        except:
-            err_msg = "matplotlib must be installed to use gridgen.plot()"
-            raise ImportError(err_msg)
+        import matplotlib.pyplot as plt
 
         from ..plot import plot_shapefile, shapefile_extents
 
@@ -705,7 +745,7 @@ class Gridgen:
             a=a,
             masked_values=masked_values,
             idx=idx,
-            **kwargs
+            **kwargs,
         )
         plt.xlim(xmin, xmax)
         plt.ylim(ymin, ymax)
@@ -808,9 +848,7 @@ class Gridgen:
         # top
         top = [0] * nlay
         for k in range(nlay):
-            fname = os.path.join(
-                self.model_ws, "quadtreegrid.top{}.dat".format(k + 1)
-            )
+            fname = os.path.join(self.model_ws, f"quadtreegrid.top{k + 1}.dat")
             f = open(fname, "r")
             tpk = np.empty((nodelay[k]), dtype=np.float32)
             tpk = read1d(f, tpk)
@@ -823,16 +861,14 @@ class Gridgen:
                     (nodelay[k],),
                     np.float32,
                     np.reshape(tpk, (nodelay[k],)),
-                    name="top {}".format(k + 1),
+                    name=f"top {k + 1}",
                 )
             top[k] = tpk
 
         # bot
         bot = [0] * nlay
         for k in range(nlay):
-            fname = os.path.join(
-                self.model_ws, "quadtreegrid.bot{}.dat".format(k + 1)
-            )
+            fname = os.path.join(self.model_ws, f"quadtreegrid.bot{k + 1}.dat")
             f = open(fname, "r")
             btk = np.empty((nodelay[k]), dtype=np.float32)
             btk = read1d(f, btk)
@@ -845,7 +881,7 @@ class Gridgen:
                     (nodelay[k],),
                     np.float32,
                     np.reshape(btk, (nodelay[k],)),
-                    name="bot {}".format(k + 1),
+                    name=f"bot {k + 1}",
                 )
             bot[k] = btk
 
@@ -868,7 +904,7 @@ class Gridgen:
                     (nodelay[k],),
                     np.float32,
                     np.reshape(ark, (nodelay[k],)),
-                    name="area layer {}".format(k + 1),
+                    name=f"area layer {k + 1}",
                 )
             area[k] = ark
             istart = istop
@@ -917,7 +953,7 @@ class Gridgen:
         f.close()
 
         # create dis object instance
-        disu = ModflowDisU(
+        disu = MfUsgDisU(
             model,
             nodes=nodes,
             nlay=nlay,
@@ -1012,9 +1048,7 @@ class Gridgen:
         istart = 0
         for k in range(nlay):
             istop = istart + nodelay[k]
-            fname = os.path.join(
-                self.model_ws, "quadtreegrid.top{}.dat".format(k + 1)
-            )
+            fname = os.path.join(self.model_ws, f"quadtreegrid.top{k + 1}.dat")
             f = open(fname, "r")
             tpk = np.empty((nodelay[k]), dtype=np.float32)
             tpk = read1d(f, tpk)
@@ -1040,9 +1074,7 @@ class Gridgen:
         istart = 0
         for k in range(nlay):
             istop = istart + nodelay[k]
-            fname = os.path.join(
-                self.model_ws, "quadtreegrid.bot{}.dat".format(k + 1)
-            )
+            fname = os.path.join(self.model_ws, f"quadtreegrid.bot{k + 1}.dat")
             f = open(fname, "r")
             btk = np.empty((nodelay[k]), dtype=np.float32)
             btk = read1d(f, btk)
@@ -1380,13 +1412,6 @@ class Gridgen:
             cellxy[n, 1] = y
         return cellxy
 
-    def get_gridprops(self):
-        msg = (
-            "Use: "
-            "get_gridprops_disu5, get_gridprops_disu6, get_gridprops_disv"
-        )
-        raise DeprecationWarning(msg)
-
     @staticmethod
     def gridarray_to_flopyusg_gridarray(nodelay, a):
         nlay = nodelay.shape[0]
@@ -1678,18 +1703,10 @@ class Gridgen:
         gridprops["ycenters"] = ycenters
         gridprops["top"] = top
         gridprops["botm"] = bot
+        gridprops["iac"] = self.get_iac()
+        gridprops["ja"] = self.get_ja()
 
         return gridprops
-
-    def to_disu6(self, fname, writevertices=True):
-        raise DeprecationWarning(
-            "Use: flopy.mf6.ModflowGwfdisu(gwf, **g.get_gridprops_disu6())"
-        )
-
-    def to_disv6(self, fname, verbose=False):
-        raise DeprecationWarning(
-            "Use: flopy.mf6.ModflowGwfdisv(gwf, **g.get_gridprops_disv())"
-        )
 
     def intersect(self, features, featuretype, layer):
         """
@@ -1712,15 +1729,15 @@ class Gridgen:
         ifname = "intersect_feature"
         if isinstance(features, list):
             ifname_w_path = os.path.join(self.model_ws, ifname)
-            if os.path.exists(ifname_w_path + ".shp"):
-                os.remove(ifname_w_path + ".shp")
+            if os.path.exists(f"{ifname_w_path}.shp"):
+                os.remove(f"{ifname_w_path}.shp")
             features_to_shapefile(features, featuretype, ifname_w_path)
             shapefile = ifname
         else:
             shapefile = features
 
-        sn = os.path.join(self.model_ws, shapefile + ".shp")
-        assert os.path.isfile(sn), "Shapefile does not exist: {}".format(sn)
+        sn = os.path.join(self.model_ws, f"{shapefile}.shp")
+        assert os.path.isfile(sn), f"Shapefile does not exist: {sn}"
 
         fname = os.path.join(self.model_ws, "_intersect.dfn")
         if os.path.isfile(fname):
@@ -1772,10 +1789,10 @@ class Gridgen:
         s = ""
         s += "BEGIN GRID_INTERSECTION intersect\n"
         s += "  GRID = quadtreegrid\n"
-        s += "  LAYER = {}\n".format(layer + 1)
-        s += "  SHAPEFILE = {}\n".format(shapefile)
-        s += "  FEATURE_TYPE = {}\n".format(featuretype)
-        s += "  OUTPUT_FILE = {}\n".format("intersection.ifo")
+        s += f"  LAYER = {layer + 1}\n"
+        s += f"  SHAPEFILE = {shapefile}\n"
+        s += f"  FEATURE_TYPE = {featuretype}\n"
+        s += "  OUTPUT_FILE = intersection.ifo\n"
         s += "END GRID_INTERSECTION intersect\n"
         return s
 
@@ -1789,56 +1806,51 @@ class Gridgen:
 
         s = ""
         s += "BEGIN MODFLOW_GRID basegrid\n"
-        s += "  ROTATION_ANGLE = {}\n".format(angrot)
-        s += "  X_OFFSET = {}\n".format(xoff)
-        s += "  Y_OFFSET = {}\n".format(yoff)
-        s += "  NLAY = {}\n".format(self.nlay)
-        s += "  NROW = {}\n".format(self.nrow)
-        s += "  NCOL = {}\n".format(self.ncol)
+        s += f"  ROTATION_ANGLE = {angrot}\n"
+        s += f"  X_OFFSET = {xoff}\n"
+        s += f"  Y_OFFSET = {yoff}\n"
+        s += f"  NLAY = {self.nlay}\n"
+        s += f"  NROW = {self.nrow}\n"
+        s += f"  NCOL = {self.ncol}\n"
 
         # delr
-        delr = self.dis.delr.array
+        delr = self.modelgrid.delr
         if delr.min() == delr.max():
-            s += "  DELR = CONSTANT {}\n".format(delr.min())
+            s += f"  DELR = CONSTANT {delr.min()}\n"
         else:
             s += "  DELR = OPEN/CLOSE delr.dat\n"
             fname = os.path.join(self.model_ws, "delr.dat")
             np.savetxt(fname, np.atleast_2d(delr))
 
         # delc
-        delc = self.dis.delc.array
+        delc = self.modelgrid.delc
         if delc.min() == delc.max():
-            s += "  DELC = CONSTANT {}\n".format(delc.min())
+            s += f"  DELC = CONSTANT {delc.min()}\n"
         else:
             s += "  DELC = OPEN/CLOSE delc.dat\n"
             fname = os.path.join(self.model_ws, "delc.dat")
             np.savetxt(fname, np.atleast_2d(delc))
 
         # top
-        top = self.dis.top.array
+        top = self.modelgrid.top
         if top.min() == top.max():
-            s += "  TOP = CONSTANT {}\n".format(top.min())
+            s += f"  TOP = CONSTANT {top.min()}\n"
         else:
             s += "  TOP = OPEN/CLOSE top.dat\n"
             fname = os.path.join(self.model_ws, "top.dat")
             np.savetxt(fname, top)
 
         # bot
-        botm = self.dis.botm.array
+        botm = self.modelgrid.botm
         for k in range(self.nlay):
-            if isinstance(self.dis, ModflowGwfdis):
-                bot = botm[k]
-            else:
-                bot = botm[k]
+            bot = botm[k]
             if bot.min() == bot.max():
-                s += "  BOTTOM LAYER {} = CONSTANT {}\n".format(
-                    k + 1, bot.min()
-                )
+                s += f"  BOTTOM LAYER {k + 1} = CONSTANT {bot.min()}\n"
             else:
                 s += "  BOTTOM LAYER {0} = OPEN/CLOSE bot{0}.dat\n".format(
                     k + 1
                 )
-                fname = os.path.join(self.model_ws, "bot{}.dat".format(k + 1))
+                fname = os.path.join(self.model_ws, f"bot{k + 1}.dat")
                 np.savetxt(fname, bot)
 
         s += "END MODFLOW_GRID\n"
@@ -1848,10 +1860,10 @@ class Gridgen:
         s = ""
         for rfname, rf in self._rfdict.items():
             shapefile, featuretype, level = rf
-            s += "BEGIN REFINEMENT_FEATURES {}\n".format(rfname)
-            s += "  SHAPEFILE = {}\n".format(shapefile)
-            s += "  FEATURE_TYPE = {}\n".format(featuretype)
-            s += "  REFINEMENT_LEVEL = {}\n".format(level)
+            s += f"BEGIN REFINEMENT_FEATURES {rfname}\n"
+            s += f"  SHAPEFILE = {shapefile}\n"
+            s += f"  FEATURE_TYPE = {featuretype}\n"
+            s += f"  REFINEMENT_LEVEL = {level}\n"
             s += "END REFINEMENT_FEATURES\n"
             s += 2 * "\n"
         return s
@@ -1859,10 +1871,10 @@ class Gridgen:
     def _ad_blocks(self):
         s = ""
         for adname, shapefile in self._addict.items():
-            s += "BEGIN ACTIVE_DOMAIN {}\n".format(adname)
-            s += "  SHAPEFILE = {}\n".format(shapefile)
-            s += "  FEATURE_TYPE = {}\n".format("polygon")
-            s += "  INCLUDE_BOUNDARY = {}\n".format("True")
+            s += f"BEGIN ACTIVE_DOMAIN {adname}\n"
+            s += f"  SHAPEFILE = {shapefile}\n"
+            s += "  FEATURE_TYPE = polygon\n"
+            s += "  INCLUDE_BOUNDARY = True\n"
             s += "END ACTIVE_DOMAIN\n"
             s += 2 * "\n"
         return s
@@ -1875,36 +1887,34 @@ class Gridgen:
         for k, adk in enumerate(self._active_domain):
             if adk is None:
                 continue
-            s += "  ACTIVE_DOMAIN LAYER {} = {}\n".format(k + 1, adk)
+            s += f"  ACTIVE_DOMAIN LAYER {k + 1} = {adk}\n"
 
         # Write refinement feature information
         for k, rfkl in enumerate(self._refinement_features):
             if len(rfkl) == 0:
                 continue
-            s += "  REFINEMENT_FEATURES LAYER {} = ".format(k + 1)
+            s += f"  REFINEMENT_FEATURES LAYER {k + 1} = "
             for rf in rfkl:
-                s += rf + " "
+                s += f"{rf} "
             s += "\n"
 
         s += "  SMOOTHING = full\n"
+        s += f"  SMOOTHING_LEVEL_VERTICAL = {self.smoothing_level_vertical}\n"
+        s += f"  SMOOTHING_LEVEL_HORIZONTAL = {self.smoothing_level_horizontal}\n"
 
         for k in range(self.nlay):
             if self.surface_interpolation[k] == "ASCIIGRID":
                 grd = self._asciigrid_dict[k]
             else:
                 grd = "basename"
-            s += "  TOP LAYER {} = {} {}\n".format(
-                k + 1, self.surface_interpolation[k], grd
-            )
+            s += f"  TOP LAYER {k + 1} = {self.surface_interpolation[k]} {grd}\n"
 
         for k in range(self.nlay):
             if self.surface_interpolation[k + 1] == "ASCIIGRID":
                 grd = self._asciigrid_dict[k + 1]
             else:
                 grd = "basename"
-            s += "  BOTTOM LAYER {} = {} {}\n".format(
-                k + 1, self.surface_interpolation[k + 1], grd
-            )
+            s += f"  BOTTOM LAYER {k + 1} = {self.surface_interpolation[k + 1]} {grd}\n"
 
         s += "  GRID_DEFINITION_FILE = quadtreegrid.dfn\n"
         s += "END QUADTREE_BUILDER\n"
@@ -1926,9 +1936,7 @@ class Gridgen:
         s += "BEGIN GRID_TO_USGDATA grid_to_usgdata\n"
         s += "  GRID = quadtreegrid\n"
         s += "  USG_DATA_PREFIX = qtg\n"
-        s += "  VERTICAL_PASS_THROUGH = {0}\n".format(
-            self.vertical_pass_through
-        )
+        s += f"  VERTICAL_PASS_THROUGH = {self.vertical_pass_through}\n"
         s += "END GRID_TO_USGDATA\n"
         s += "\n"
         s += "BEGIN GRID_TO_VTKFILE grid_to_vtk\n"
@@ -1954,12 +1962,13 @@ class Gridgen:
         None
 
         """
-        shapefile = import_shapefile(check_version=False)
+        shapefile = import_optional_dependency("shapefile")
+
         # ensure there are active leaf cells from gridgen
         fname = os.path.join(self.model_ws, "qtg.nod")
         if not os.path.isfile(fname):
             raise Exception(
-                "File {} should have been created by gridgen.".format(fname)
+                f"File {fname} should have been created by gridgen."
             )
         f = open(fname, "r")
         line = f.readline()
