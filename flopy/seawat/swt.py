@@ -1,12 +1,14 @@
 import os
+from typing import Union
+
+from ..discretization.modeltime import ModelTime
+from ..discretization.structuredgrid import StructuredGrid
 from ..mbase import BaseModel
-from ..pakbase import Package
 from ..modflow import Modflow
 from ..mt3d import Mt3dms
+from ..pakbase import Package
 from .swtvdf import SeawatVdf
 from .swtvsc import SeawatVsc
-from ..discretization.structuredgrid import StructuredGrid
-from flopy.discretization.modeltime import ModelTime
 
 
 class SeawatList(Package):
@@ -15,7 +17,7 @@ class SeawatList(Package):
     """
 
     def __init__(self, model, extension="list", listunit=7):
-        Package.__init__(self, model, extension, "LIST", listunit)
+        super().__init__(model, extension, "LIST", listunit)
         return
 
     def __repr__(self):
@@ -146,11 +148,7 @@ class Seawat(BaseModel):
 
             # external_path = os.path.join(model_ws, external_path)
             if os.path.exists(external_path):
-                print(
-                    "Note: external_path "
-                    + str(external_path)
-                    + " already exists"
-                )
+                print(f"Note: external_path {external_path} already exists")
             # assert os.path.exists(external_path),'external_path does not exist'
             else:
                 os.mkdir(external_path)
@@ -204,8 +202,7 @@ class Seawat(BaseModel):
             self.dis.botm.array,
             idomain=ibound,
             lenuni=self.dis.lenuni,
-            proj4=self._modelgrid.proj4,
-            epsg=self._modelgrid.epsg,
+            crs=self._modelgrid.crs,
             xoff=self._modelgrid.xoffset,
             yoff=self._modelgrid.yoffset,
             angrot=self._modelgrid.angrot,
@@ -229,8 +226,7 @@ class Seawat(BaseModel):
             xoff,
             yoff,
             self._modelgrid.angrot,
-            self._modelgrid.epsg,
-            self._modelgrid.proj4,
+            self._modelgrid.crs,
         )
         self._mg_resync = not self._modelgrid.is_complete
         return self._modelgrid
@@ -328,7 +324,7 @@ class Seawat(BaseModel):
         # open and write header
         fn_path = os.path.join(self.model_ws, self.namefile)
         f_nam = open(fn_path, "w")
-        f_nam.write("{}\n".format(self.heading))
+        f_nam.write(f"{self.heading}\n")
 
         # Write global file entry
         if self.glo is not None:
@@ -362,7 +358,7 @@ class Seawat(BaseModel):
                 tag = "DATA"
                 if b:
                     tag = "DATA(BINARY)"
-                f_nam.write("{0:14s} {1:5d}  {2}\n".format(tag, u, f))
+                f_nam.write(f"{tag:14s} {u:5d}  {f}\n")
 
             # write the output files
             for u, f, b in zip(
@@ -373,11 +369,9 @@ class Seawat(BaseModel):
                 if u == 0:
                     continue
                 if b:
-                    f_nam.write(
-                        "DATA(BINARY)   {:5d}  {} REPLACE\n".format(u, f)
-                    )
+                    f_nam.write(f"DATA(BINARY)   {u:5d}  {f} REPLACE\n")
                 else:
-                    f_nam.write("DATA           {:5d}  {}\n".format(u, f))
+                    f_nam.write(f"DATA           {u:5d}  {f}\n")
 
         if self._mt is not None:
             # write the external files
@@ -389,7 +383,7 @@ class Seawat(BaseModel):
                 tag = "DATA"
                 if b:
                     tag = "DATA(BINARY)"
-                f_nam.write("{0:14s} {1:5d}  {2}\n".format(tag, u, f))
+                f_nam.write(f"{tag:14s} {u:5d}  {f}\n")
 
             # write the output files
             for u, f, b in zip(
@@ -400,11 +394,9 @@ class Seawat(BaseModel):
                 if u == 0:
                     continue
                 if b:
-                    f_nam.write(
-                        "DATA(BINARY)   {:5d}  {} REPLACE\n".format(u, f)
-                    )
+                    f_nam.write(f"DATA(BINARY)   {u:5d}  {f} REPLACE\n")
                 else:
-                    f_nam.write("DATA           {:5d}  {}\n".format(u, f))
+                    f_nam.write(f"DATA           {u:5d}  {f}\n")
 
         # write the external files
         for b, u, f in zip(
@@ -413,7 +405,7 @@ class Seawat(BaseModel):
             tag = "DATA"
             if b:
                 tag = "DATA(BINARY)"
-            f_nam.write("{0:14s} {1:5d}  {2}\n".format(tag, u, f))
+            f_nam.write(f"{tag:14s} {u:5d}  {f}\n")
 
         # write the output files
         for u, f, b in zip(
@@ -422,9 +414,9 @@ class Seawat(BaseModel):
             if u == 0:
                 continue
             if b:
-                f_nam.write("DATA(BINARY)   {:5d}  {} REPLACE\n".format(u, f))
+                f_nam.write(f"DATA(BINARY)   {u:5d}  {f} REPLACE\n")
             else:
-                f_nam.write("DATA           {:5d}  {}\n".format(u, f))
+                f_nam.write(f"DATA           {u:5d}  {f}\n")
 
         f_nam.close()
         return
@@ -432,11 +424,11 @@ class Seawat(BaseModel):
     @classmethod
     def load(
         cls,
-        f,
+        f: str,
         version="seawat",
-        exe_name="swtv4",
+        exe_name: Union[str, os.PathLike] = "swtv4",
         verbose=False,
-        model_ws=".",
+        model_ws: Union[str, os.PathLike] = os.curdir,
         load_only=None,
     ):
         """
@@ -445,15 +437,15 @@ class Seawat(BaseModel):
         Parameters
         ----------
         f : str
-            Path to SEAWAT name file to load.
+            Name of SEAWAT name file to load.
         version : str, default "seawat"
             Version of SEAWAT to use. Valid versions are "seawat" (default).
         exe_name : str, default "swtv4"
             The name of the executable to use.
         verbose : bool, default False
             Print additional information to the screen.
-        model_ws : str, default "."
-            Model workspace.  Directory name to create model data sets.
+        model_ws : str or PathLike, default "."
+            Model workspace.  Directory to create model data sets.
             Default is the present working directory.
         load_only : list of str, optional
             Packages to load (e.g. ["lpf", "adv"]). Default None

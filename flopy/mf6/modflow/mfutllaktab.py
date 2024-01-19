@@ -1,18 +1,18 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
 
 class ModflowUtllaktab(mfpackage.MFPackage):
     """
-    ModflowUtllaktab defines a tab package within a utl model.
+    ModflowUtllaktab defines a laktab package within a utl model.
 
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -47,12 +47,16 @@ class ModflowUtllaktab(mfpackage.MFPackage):
 
     """
 
-    table = ListTemplateGenerator(("tab", "table", "table"))
-    package_abbr = "utltab"
-    _package_type = "tab"
-    dfn_file_name = "utl-lak-tab.dfn"
+    table = ListTemplateGenerator(("laktab", "table", "table"))
+    package_abbr = "utllaktab"
+    _package_type = "laktab"
+    dfn_file_name = "utl-laktab.dfn"
 
     dfn = [
+        [
+            "header",
+            "multi-package",
+        ],
         [
             "block dimensions",
             "name nrow",
@@ -122,10 +126,10 @@ class ModflowUtllaktab(mfpackage.MFPackage):
         table=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "tab", filename, pname, loading_package, parent_file
+            model, "laktab", filename, pname, loading_package, **kwargs
         )
 
         # set up variables

@@ -1,11 +1,8 @@
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib as mpl
-except (ImportError, ModuleNotFoundError):
-    plt = None
-
 import os
 import platform
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 
 class styles:
@@ -54,7 +51,7 @@ class styles:
             None
         """
         mpl.rcParams["font.family"] = family
-        mpl.rcParams["font." + family] = fontname
+        mpl.rcParams[f"font.{family}"] = fontname
         return mpl.rcParams
 
     @classmethod
@@ -112,7 +109,7 @@ class styles:
                 letter = letter.rstrip()
                 if not letter.endswith("."):
                     letter += "."
-                text = letter + " " + heading
+                text = f"{letter} {heading}"
         else:
             text = heading
 
@@ -213,22 +210,23 @@ class styles:
         if ax is None:
             ax = plt.gca()
 
-        fontspec = styles.__set_fontspec(bold=True, italic=False, family=True)
+        fontsize = kwargs.pop("fontsize", 9)
+        fontspec = styles.__set_fontspec(
+            bold=True, italic=False, family=True, fontsize=fontsize
+        )
 
         if handles is None or labels is None:
             handles, labels = ax.get_legend_handles_labels()
         leg = ax.legend(handles, labels, prop=fontspec, **kwargs)
 
-        # add title to legend
-        if "title" in kwargs:
-            title = kwargs.pop("title")
-        else:
-            title = None
+        title = kwargs.pop("title", None)
+        fontsize = kwargs.pop("title_fontsize", None)
+
         leg = styles.graph_legend_title(leg, title=title)
         return leg
 
     @classmethod
-    def graph_legend_title(cls, leg, title=None):
+    def graph_legend_title(cls, leg, title=None, fontsize=9):
         """Set the legend title for a matplotlib legend object
 
         Parameters
@@ -237,6 +235,8 @@ class styles:
             matplotlib legend object
         title : str
             title for legend
+        fontsize : int
+            fontsize for legend
 
         Returns
         -------
@@ -249,7 +249,9 @@ class styles:
         elif title.lower() == "none":
             title = None
 
-        fontspec = styles.__set_fontspec(bold=True, italic=False, family=True)
+        fontspec = styles.__set_fontspec(
+            bold=True, italic=False, family=True, fontsize=fontsize
+        )
 
         leg.set_title(title, prop=fontspec)
         return leg
@@ -267,7 +269,7 @@ class styles:
         fontsize=9,
         ha="left",
         va="bottom",
-        **kwargs
+        **kwargs,
     ):
         """Add USGS-style text to a axis object
 
@@ -324,7 +326,7 @@ class styles:
             ha=ha,
             fontdict=font,
             transform=transform,
-            **kwargs
+            **kwargs,
         )
         return text_obj
 
@@ -340,7 +342,7 @@ class styles:
         fontsize=9,
         ha="left",
         va="bottom",
-        **kwargs
+        **kwargs,
     ):
         """Add an annotation to a axis object
 
@@ -436,7 +438,7 @@ class styles:
             dict
         """
         family = mpl.rcParams["font.family"][0]
-        font = mpl.rcParams["font." + family][0]
+        font = mpl.rcParams[f"font.{family}"][0]
 
         if bold:
             weight = "bold"

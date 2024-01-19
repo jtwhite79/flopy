@@ -1,19 +1,20 @@
 """
 mp7 module.  Contains the Modpath7List and Modpath7 classes.
 
-
 """
 
+import os
+
 import numpy as np
+
 from ..mbase import BaseModel
-from ..modflow import Modflow
 from ..mf6 import MFModel
+from ..modflow import Modflow
 from ..pakbase import Package
 from .mp7bas import Modpath7Bas
-from .mp7sim import Modpath7Sim
 from .mp7particledata import CellDataType, NodeParticleData
 from .mp7particlegroup import ParticleGroupNodeTemplate
-import os
+from .mp7sim import Modpath7Sim
 
 
 class Modpath7List(Package):
@@ -23,16 +24,11 @@ class Modpath7List(Package):
     """
 
     def __init__(self, model, extension="list", unitnumber=None):
-        """
-        Package constructor.
-
-        """
         if unitnumber is None:
             unitnumber = model.next_unit()
 
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(self, model, extension, "LIST", unitnumber)
+        # call base package constructor
+        super().__init__(model, extension, "LIST", unitnumber)
         # self.parent.add_package(self) This package is not added to the base
         # model so that it is not included in get_name_file_entries()
         return
@@ -57,7 +53,7 @@ class Modpath7(BaseModel):
     version : str, default "modpath7"
         String that defines the MODPATH version. Valid versions are
         "modpath7" (default).
-    exe_name : str, default "mp7.exe"
+    exe_name : str, default "mp7"
         The name of the executable to use.
     flowmodel : flopy.modflow.Modflow or flopy.mf6.MFModel object
         MODFLOW model object.
@@ -88,7 +84,7 @@ class Modpath7(BaseModel):
         simfile_ext="mpsim",
         namefile_ext="mpnam",
         version="modpath7",
-        exe_name="mp7.exe",
+        exe_name="mp7",
         flowmodel=None,
         headfilename=None,
         budgetfilename=None,
@@ -108,8 +104,8 @@ class Modpath7(BaseModel):
 
         self.lst = Modpath7List(self)
 
-        self.mpnamefile = "{}.{}".format(self.name, namefile_ext)
-        self.mpbas_file = "{}.mpbas".format(modelname)
+        self.mpnamefile = f"{self.name}.{namefile_ext}"
+        self.mpbas_file = f"{modelname}.mpbas"
 
         if not isinstance(flowmodel, (Modflow, MFModel)):
             raise TypeError(
@@ -132,6 +128,9 @@ class Modpath7(BaseModel):
         # set flowmodel and flow_version attributes
         self.flowmodel = flowmodel
         self.flow_version = self.flowmodel.version
+        self._flowmodel_ws = os.path.relpath(
+            flowmodel.model_ws, self._model_ws
+        )
 
         if self.flow_version == "mf6":
             # get discretization package
@@ -180,8 +179,8 @@ class Modpath7(BaseModel):
 
             # set dis and grbdis file name
             dis_file = None
-            grbdis_file = dis.filename + ".grb"
-            grbtag = "GRB{}".format(dis.package_name.upper())
+            grbdis_file = f"{dis.filename}.grb"
+            grbtag = f"GRB{dis.package_name.upper()}"
 
             tdis = self.flowmodel.simulation.get_package("TDIS")
             if tdis is None:
@@ -378,19 +377,27 @@ class Modpath7(BaseModel):
         """
         fpth = os.path.join(self.model_ws, self.mpnamefile)
         f = open(fpth, "w")
-        f.write("{}\n".format(self.heading))
+        f.write(f"{self.heading}\n")
         if self.mpbas_file is not None:
-            f.write("{:10s} {}\n".format("MPBAS", self.mpbas_file))
+            f.write(f"MPBAS      {self.mpbas_file}\n")
         if self.dis_file is not None:
-            f.write("{:10s} {}\n".format("DIS", self.dis_file))
+            f.write(f"DIS        {self.dis_file}\n")
         if self.grbdis_file is not None:
-            f.write("{:10s} {}\n".format(self.grbtag, self.grbdis_file))
+            f.write(
+                f"{self.grbtag:10s} {os.path.join(self._flowmodel_ws, self.grbdis_file)}\n"
+            )
         if self.tdis_file is not None:
-            f.write("{:10s} {}\n".format("TDIS", self.tdis_file))
+            f.write(
+                f"TDIS       {os.path.join(self._flowmodel_ws, self.tdis_file)}\n"
+            )
         if self.headfilename is not None:
-            f.write("{:10s} {}\n".format("HEAD", self.headfilename))
+            f.write(
+                f"HEAD       {os.path.join(self._flowmodel_ws, self.headfilename)}\n"
+            )
         if self.budgetfilename is not None:
-            f.write("{:10s} {}\n".format("BUDGET", self.budgetfilename))
+            f.write(
+                f"BUDGET     {os.path.join(self._flowmodel_ws, self.budgetfilename)}\n"
+            )
         f.close()
 
     @classmethod

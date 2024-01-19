@@ -1,29 +1,29 @@
-name: Read the Docs
+name: FloPy documentation
 
 on:
   push:
+  pull_request:
     branches:
       - master
       - develop
-      - 'release*'
-  pull_request:
-    branches: [master, develop]
 
 jobs:
 
   rtd_build:
-    name: Read the Docs build
-    runs-on: ubuntu-latest
+    name: Prepare and test notebooks
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash
 
-    if: github.repository_owner == 'modflowpy'
     steps:
       - name: Checkout flopy repo
-        uses: actions/checkout@v2.3.4
+        uses: actions/checkout@v4
 
       - name: Output repo information
         run: |
@@ -32,53 +32,55 @@ jobs:
           echo $GITHUB_REF
           echo $GITHUB_EVENT_NAME
 
-      # Standard python fails on windows without GDAL installation
-      # Using custom bash shell ("shell: bash -l {0}") with Miniconda
-      - name: Setup Miniconda
-        uses: conda-incubator/setup-miniconda@v2.1.1
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: 3.8
-          mamba-version: "*"
-          channels: conda-forge
-          auto-update-conda: true
-          activate-environment: flopy
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
 
-      - name: Add jupyter and jupytext to scripts run
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install flopy and dependencies
+        run: pip install ".[test, doc, optional]"
+      
+      - name: Workaround OpenGL issue on Linux
+        if: runner.os == 'Linux'
         run: |
-          mamba install --name flopy jupyter jupytext
-
-      - name: Add packages to flopy environment
+          # referenced from https://github.com/pyvista/pyvista/blob/main/.github/workflows/vtk-pre-test.yml#L53
+          pip uninstall -y vtk
+          pip install --extra-index-url https://wheels.vtk.org trame vtk-osmesa
+      
+      - name: Install fonts on Linux
+        if: runner.os == 'Linux'
         run: |
-          mamba env update --name flopy --file etc/environment.yml
-
-      - name: Install pymake, xmipy, and flopy
+          echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
+          sudo apt-get install ttf-mscorefonts-installer fonts-liberation
+          sudo rm -rf ~/.cache/matplotlib
+      
+      - name: Install OpenGL on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          pip install https://github.com/modflowpy/pymake/zipball/master
-          pip install xmipy
-          pip install .
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $PSDefaultParameterValues['*:ErrorAction']='Stop'
+          powershell .github/install_opengl.ps1
 
-      - name: Download executables needed for tests
-        run: |
-          python ./autotest/get_exes.py
+      - name: Install MODFLOW executables
+        uses: modflowpy/install-modflow-action@v1
 
-      - name: Add executables directory to path
-        run: |
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Run tutorial and example notebooks
+        working-directory: autotest
+        run: pytest -v -n auto test_notebooks.py
 
-      - name: Run jupytext on tutorials
-        run: |
-          cd .docs/
-          python create_tutorials.py
-          cd ../
-
-      - name: Upload completed jupyter notebooks as an artifact for ReadtheDocs
-        if:
-          github.repository_owner == 'modflowpy' && github.event_name == 'push'
-        uses: actions/upload-artifact@v2
+      - name: Upload notebooks artifact for ReadtheDocs
+        if: github.repository_owner == 'modflowpy' && github.event_name == 'push' && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
         with:
           name: notebooks-for-${{ github.sha }}
-          path: |
-            .docs/_notebooks
+          path: .docs/Notebooks/*.ipynb
 
   # trigger rtd if previous job was successful
   rtd:
@@ -90,7 +92,7 @@ jobs:
       github.repository_owner == 'modflowpy' && github.event_name == 'push'
     steps:
       - name: Trigger RTDs build on master and develop branches
-        uses: dfm/rtds-action@v1.0.2
+        uses: dfm/rtds-action@v1
         with:
           webhook_url: ${{ secrets.RTDS_WEBHOOK_URL }}
           webhook_token: ${{ secrets.RTDS_WEBHOOK_TOKEN }}

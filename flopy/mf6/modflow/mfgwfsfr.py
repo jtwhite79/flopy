@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfsfr(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -59,6 +59,10 @@ class ModflowGwfsfr(mfpackage.MFPackage):
     budget_filerecord : [budgetfile]
         * budgetfile (string) name of the binary output file to write budget
           information.
+    budgetcsv_filerecord : [budgetcsvfile]
+        * budgetcsvfile (string) name of the comma-separated value (CSV) output
+          file to write budget summary information. A budget summary record
+          will be written to this file for each time step of the simulation.
     package_convergence_filerecord : [package_convergence_filename]
         * package_convergence_filename (string) name of the comma spaced values
           output file to write package convergence information.
@@ -78,66 +82,99 @@ class ModflowGwfsfr(mfpackage.MFPackage):
           MOVER option is specified, additional memory is allocated within the
           package to store the available, provided, and received water.
     maximum_picard_iterations : integer
-        * maximum_picard_iterations (integer) value that defines the maximum
-          number of Streamflow Routing picard iterations allowed when solving
-          for reach stages and flows as part of the GWF formulate step. Picard
-          iterations are used to minimize differences in SFR package results
-          between subsequent GWF picard (non-linear) iterations as a result of
-          non-optimal reach numbering. If reaches are numbered in order, from
-          upstream to downstream, MAXIMUM_PICARD_ITERATIONS can be set to 1 to
-          reduce model run time. By default, MAXIMUM_PICARD_ITERATIONS is equal
-          to 100.
+        * maximum_picard_iterations (integer) integer value that defines the
+          maximum number of Streamflow Routing picard iterations allowed when
+          solving for reach stages and flows as part of the GWF formulate step.
+          Picard iterations are used to minimize differences in SFR package
+          results between subsequent GWF picard (non-linear) iterations as a
+          result of non-optimal reach numbering. If reaches are numbered in
+          order, from upstream to downstream, MAXIMUM_PICARD_ITERATIONS can be
+          set to 1 to reduce model run time. By default,
+          MAXIMUM_PICARD_ITERATIONS is equal to 100.
     maximum_iterations : integer
-        * maximum_iterations (integer) value that defines the maximum number of
-          Streamflow Routing Newton-Raphson iterations allowed for a reach. By
-          default, MAXIMUM_ITERATIONS is equal to 100.
+        * maximum_iterations (integer) integer value that defines the maximum
+          number of Streamflow Routing Newton-Raphson iterations allowed for a
+          reach. By default, MAXIMUM_ITERATIONS is equal to 100.
+          MAXIMUM_ITERATIONS would only need to be increased from the default
+          value if one or more reach in a simulation has a large water budget
+          error.
     maximum_depth_change : double
-        * maximum_depth_change (double) value that defines the depth closure
-          tolerance. By default, DMAXCHG is equal to :math:`1 \\times 10^{-5}`.
+        * maximum_depth_change (double) real value that defines the depth
+          closure tolerance. By default, MAXIMUM_DEPTH_CHANGE is equal to
+          :math:`1 \\times 10^{-5}`. The MAXIMUM_STAGE_CHANGE would only need
+          to be increased or decreased from the default value if the water
+          budget error for one or more reach is too small or too large,
+          respectively.
     unit_conversion : double
-        * unit_conversion (double) value (or conversion factor) that is used in
-          calculating stream depth for stream reach. A constant of 1.486 is
-          used for flow units of cubic feet per second, and a constant of 1.0
-          is used for units of cubic meters per second. The constant must be
-          multiplied by 86,400 when using time units of days in the simulation.
+        * unit_conversion (double) real value that is used to convert user-
+          specified Manning's roughness coefficients from seconds per
+          meters:math:`^{1/3}` to model length and time units. A constant of
+          1.486 is used for flow units of cubic feet per second, and a constant
+          of 1.0 is used for units of cubic meters per second. The constant
+          must be multiplied by 86,400 when using time units of days in the
+          simulation.
+    length_conversion : double
+        * length_conversion (double) real value that is used to convert user-
+          specified Manning's roughness coefficients from meters to model
+          length units. LENGTH_CONVERSION should be set to 3.28081, 1.0, and
+          100.0 when using length units (LENGTH_UNITS) of feet, meters, or
+          centimeters in the simulation, respectively. LENGTH_CONVERSION does
+          not need to be specified if LENGTH_UNITS are meters.
+    time_conversion : double
+        * time_conversion (double) real value that is used to convert user-
+          specified Manning's roughness coefficients from seconds to model time
+          units. TIME_CONVERSION should be set to 1.0, 60.0, 3,600.0, 86,400.0,
+          and 31,557,600.0 when using time units (TIME_UNITS) of seconds,
+          minutes, hours, days, or years in the simulation, respectively.
+          TIME_CONVERSION does not need to be specified if TIME_UNITS are
+          seconds.
     nreaches : integer
         * nreaches (integer) integer value specifying the number of stream
           reaches. There must be NREACHES entries in the PACKAGEDATA block.
-    packagedata : [rno, cellid, rlen, rwid, rgrd, rtp, rbth, rhk, man, ncon,
+    packagedata : [ifno, cellid, rlen, rwid, rgrd, rtp, rbth, rhk, man, ncon,
       ustrf, ndv, aux, boundname]
-        * rno (integer) integer value that defines the reach number associated
-          with the specified PACKAGEDATA data on the line. RNO must be greater
-          than zero and less than or equal to NREACHES. Reach information must
-          be specified for every reach or the program will terminate with an
-          error. The program will also terminate with an error if information
-          for a reach is specified more than once. This argument is an index
-          variable, which means that it should be treated as zero-based when
-          working with FloPy and Python. Flopy will automatically subtract one
-          when loading index variables and add one when writing index
-          variables.
-        * cellid ((integer, ...)) The keyword 'NONE' must be specified for
-          reaches that are not connected to an underlying GWF cell. The keyword
-          'NONE' is used for reaches that are in cells that have IDOMAIN values
-          less than one or are in areas not covered by the GWF model grid.
-          Reach-aquifer flow is not calculated if the keyword 'NONE' is
-          specified. This argument is an index variable, which means that it
-          should be treated as zero-based when working with FloPy and Python.
-          Flopy will automatically subtract one when loading index variables
-          and add one when writing index variables.
+        * ifno (integer) integer value that defines the feature (reach) number
+          associated with the specified PACKAGEDATA data on the line. IFNO must
+          be greater than zero and less than or equal to NREACHES. Reach
+          information must be specified for every reach or the program will
+          terminate with an error. The program will also terminate with an
+          error if information for a reach is specified more than once. This
+          argument is an index variable, which means that it should be treated
+          as zero-based when working with FloPy and Python. Flopy will
+          automatically subtract one when loading index variables and add one
+          when writing index variables.
+        * cellid ((integer, ...)) is the cell identifier, and depends on the
+          type of grid that is used for the simulation. For a structured grid
+          that uses the DIS input file, CELLID is the layer, row, and column.
+          For a grid that uses the DISV input file, CELLID is the layer and
+          CELL2D number. If the model uses the unstructured discretization
+          (DISU) input file, CELLID is the node number for the cell. For
+          reaches that are not connected to an underlying GWF cell, a zero
+          should be specified for each grid dimension. For example, for a DIS
+          grid a CELLID of 0 0 0 should be specified. Reach-aquifer flow is not
+          calculated for unconnected reaches. The keyword NONE can be still be
+          specified to identify unconnected reaches for backward compatibility
+          with previous versions of MODFLOW 6 but eventually NONE will be
+          deprecated and will cause MODFLOW 6 to terminate with an error. This
+          argument is an index variable, which means that it should be treated
+          as zero-based when working with FloPy and Python. Flopy will
+          automatically subtract one when loading index variables and add one
+          when writing index variables.
         * rlen (double) real value that defines the reach length. RLEN must be
           greater than zero.
         * rwid (double) real value that defines the reach width. RWID must be
           greater than zero.
         * rgrd (double) real value that defines the stream gradient (slope)
           across the reach. RGRD must be greater than zero.
-        * rtp (double) real value that defines the top elevation of the reach
-          streambed.
+        * rtp (double) real value that defines the bottom elevation of the
+          reach.
         * rbth (double) real value that defines the thickness of the reach
-          streambed. RBTH can be any value if CELLID is 'NONE'. Otherwise, RBTH
-          must be greater than zero.
+          streambed. RBTH can be any value if the reach is not connected to an
+          underlying GWF cell. Otherwise, RBTH must be greater than zero.
         * rhk (double) real value that defines the hydraulic conductivity of
-          the reach streambed. RHK can be any positive value if CELLID is
-          'NONE'. Otherwise, RHK must be greater than zero.
+          the reach streambed. RHK can be any positive value if the reach is
+          not connected to an underlying GWF cell. Otherwise, RHK must be
+          greater than zero.
         * man (string) real or character value that defines the Manning's
           roughness coefficient for the reach. MAN must be greater than zero.
           If the Options block includes a TIMESERIESFILE entry (see the "Time-
@@ -145,7 +182,7 @@ class ModflowGwfsfr(mfpackage.MFPackage):
           by entering the time-series name in place of a numeric value.
         * ncon (integer) integer value that defines the number of reaches
           connected to the reach. If a value of zero is specified for NCON an
-          entry for RNO is still required in the subsequent CONNECTIONDATA
+          entry for IFNO is still required in the subsequent CONNECTIONDATA
           block.
         * ustrf (double) real value that defines the fraction of upstream flow
           from each upstream reach that is applied as upstream inflow to the
@@ -169,10 +206,27 @@ class ModflowGwfsfr(mfpackage.MFPackage):
           ASCII character variable that can contain as many as 40 characters.
           If BOUNDNAME contains spaces in it, then the entire name must be
           enclosed within single quotes.
-    connectiondata : [rno, ic]
-        * rno (integer) integer value that defines the reach number associated
-          with the specified CONNECTIONDATA data on the line. RNO must be
-          greater than zero and less than or equal to NREACHES. Reach
+    crosssections : [ifno, tab6_filename]
+        * ifno (integer) integer value that defines the feature (reach) number
+          associated with the specified cross-section table file on the line.
+          IFNO must be greater than zero and less than or equal to NREACHES.
+          The program will also terminate with an error if table information
+          for a reach is specified more than once. This argument is an index
+          variable, which means that it should be treated as zero-based when
+          working with FloPy and Python. Flopy will automatically subtract one
+          when loading index variables and add one when writing index
+          variables.
+        * tab6_filename (string) character string that defines the path and
+          filename for the file containing cross-section table data for the
+          reach. The TAB6_FILENAME file includes the number of entries in the
+          file and the station elevation data in terms of the fractional width
+          and the reach depth. Instructions for creating the TAB6_FILENAME
+          input file are provided in SFR Reach Cross-Section Table Input File
+          section.
+    connectiondata : [ifno, ic]
+        * ifno (integer) integer value that defines the feature (reach) number
+          associated with the specified CONNECTIONDATA data on the line. IFNO
+          must be greater than zero and less than or equal to NREACHES. Reach
           connection information must be specified for every reach or the
           program will terminate with an error. The program will also terminate
           with an error if connection information for a reach is specified more
@@ -192,12 +246,12 @@ class ModflowGwfsfr(mfpackage.MFPackage):
           that it should be treated as zero-based when working with FloPy and
           Python. Flopy will automatically subtract one when loading index
           variables and add one when writing index variables.
-    diversions : [rno, idv, iconr, cprior]
-        * rno (integer) integer value that defines the reach number associated
-          with the specified DIVERSIONS data on the line. RNO must be greater
-          than zero and less than or equal to NREACHES. Reach diversion
-          information must be specified for every reach with a NDV value
-          greater than 0 or the program will terminate with an error. The
+    diversions : [ifno, idv, iconr, cprior]
+        * ifno (integer) integer value that defines the feature (reach) number
+          associated with the specified DIVERSIONS data on the line. IFNO must
+          be greater than zero and less than or equal to NREACHES. Reach
+          diversion information must be specified for every reach with a NDV
+          value greater than 0 or the program will terminate with an error. The
           program will also terminate with an error if diversion information
           for a given reach diversion is specified more than once. This
           argument is an index variable, which means that it should be treated
@@ -205,16 +259,16 @@ class ModflowGwfsfr(mfpackage.MFPackage):
           automatically subtract one when loading index variables and add one
           when writing index variables.
         * idv (integer) integer value that defines the downstream diversion
-          number for the diversion for reach RNO. IDV must be greater than zero
-          and less than or equal to NDV for reach RNO. This argument is an
-          index variable, which means that it should be treated as zero-based
-          when working with FloPy and Python. Flopy will automatically subtract
-          one when loading index variables and add one when writing index
-          variables.
+          number for the diversion for reach IFNO. IDV must be greater than
+          zero and less than or equal to NDV for reach IFNO. This argument is
+          an index variable, which means that it should be treated as zero-
+          based when working with FloPy and Python. Flopy will automatically
+          subtract one when loading index variables and add one when writing
+          index variables.
         * iconr (integer) integer value that defines the downstream reach that
           will receive the diverted water. IDV must be greater than zero and
           less than or equal to NREACHES. Furthermore, reach ICONR must be a
-          downstream connection for reach RNO. This argument is an index
+          downstream connection for reach IFNO. This argument is an index
           variable, which means that it should be treated as zero-based when
           working with FloPy and Python. Flopy will automatically subtract one
           when loading index variables and add one when writing index
@@ -225,35 +279,35 @@ class ModflowGwfsfr(mfpackage.MFPackage):
           conjunction with the value of FLOW value specified in the
           STRESS_PERIOD_DATA section. Available diversion options include: (1)
           CPRIOR = 'FRACTION', then the amount of the diversion is computed as
-          a fraction of the streamflow leaving reach RNO (:math:`Q_{DS}`); in
+          a fraction of the streamflow leaving reach IFNO (:math:`Q_{DS}`); in
           this case, 0.0 :math:`\\le` DIVFLOW :math:`\\le` 1.0. (2) CPRIOR =
-          'EXCESS', a diversion is made only if :math:`Q_{DS}` for reach RNO
+          'EXCESS', a diversion is made only if :math:`Q_{DS}` for reach IFNO
           exceeds the value of DIVFLOW. If this occurs, then the quantity of
           water diverted is the excess flow (:math:`Q_{DS} -` DIVFLOW) and
-          :math:`Q_{DS}` from reach RNO is set equal to DIVFLOW. This
+          :math:`Q_{DS}` from reach IFNO is set equal to DIVFLOW. This
           represents a flood-control type of diversion, as described by Danskin
           and Hanson (2002). (3) CPRIOR = 'THRESHOLD', then if :math:`Q_{DS}`
-          in reach RNO is less than the specified diversion flow (DIVFLOW), no
-          water is diverted from reach RNO. If :math:`Q_{DS}` in reach RNO is
-          greater than or equal to (DIVFLOW), (DIVFLOW) is diverted and
+          in reach IFNO is less than the specified diversion flow DIVFLOW, no
+          water is diverted from reach IFNO. If :math:`Q_{DS}` in reach IFNO is
+          greater than or equal to DIVFLOW, DIVFLOW is diverted and
           :math:`Q_{DS}` is set to the remainder (:math:`Q_{DS} -` DIVFLOW)).
           This approach assumes that once flow in the stream is sufficiently
           low, diversions from the stream cease, and is the 'priority'
           algorithm that originally was programmed into the STR1 Package
-          (Prudic, 1989). (4) CPRIOR = 'UPTO' -- if :math:`Q_{DS}` in reach RNO
-          is greater than or equal to the specified diversion flow (DIVFLOW),
-          :math:`Q_{DS}` is reduced by DIVFLOW. If :math:`Q_{DS}` in reach RNO
-          is less than (DIVFLOW), DIVFLOW is set to :math:`Q_{DS}` and there
-          will be no flow available for reaches connected to downstream end of
-          reach RNO.
-    perioddata : [rno, sfrsetting]
-        * rno (integer) integer value that defines the reach number associated
-          with the specified PERIOD data on the line. RNO must be greater than
-          zero and less than or equal to NREACHES. This argument is an index
-          variable, which means that it should be treated as zero-based when
-          working with FloPy and Python. Flopy will automatically subtract one
-          when loading index variables and add one when writing index
-          variables.
+          (Prudic, 1989). (4) CPRIOR = 'UPTO' -- if :math:`Q_{DS}` in reach
+          IFNO is greater than or equal to the specified diversion flow
+          DIVFLOW, :math:`Q_{DS}` is reduced by DIVFLOW. If :math:`Q_{DS}` in
+          reach IFNO is less than DIVFLOW, DIVFLOW is set to :math:`Q_{DS}` and
+          there will be no flow available for reaches connected to downstream
+          end of reach IFNO.
+    perioddata : [ifno, sfrsetting]
+        * ifno (integer) integer value that defines the feature (reach) number
+          associated with the specified PERIOD data on the line. IFNO must be
+          greater than zero and less than or equal to NREACHES. This argument
+          is an index variable, which means that it should be treated as zero-
+          based when working with FloPy and Python. Flopy will automatically
+          subtract one when loading index variables and add one when writing
+          index variables.
         * sfrsetting (keystring) line of information that is parsed into a
           keyword and values. Keyword values that can be used to start the
           SFRSETTING string include: STATUS, MANNING, STAGE, INFLOW, RAINFALL,
@@ -337,10 +391,10 @@ class ModflowGwfsfr(mfpackage.MFPackage):
                   zero. By default, runoff rates are zero for each reach.
             diversionrecord : [idv, divflow]
                 * idv (integer) an integer value specifying which diversion of
-                  reach RNO that DIVFLOW is being specified for. Must be less
-                  or equal to ndv for the current reach (RNO). This argument is
-                  an index variable, which means that it should be treated as
-                  zero-based when working with FloPy and Python. Flopy will
+                  reach IFNO that DIVFLOW is being specified for. Must be less
+                  or equal to ndv for the current reach (IFNO). This argument
+                  is an index variable, which means that it should be treated
+                  as zero-based when working with FloPy and Python. Flopy will
                   automatically subtract one when loading index variables and
                   add one when writing index variables.
                 * divflow (double) real or character value that defines the
@@ -355,6 +409,14 @@ class ModflowGwfsfr(mfpackage.MFPackage):
                   that is applied as upstream inflow to the reach. The sum of
                   all USTRF values for all reaches connected to the same
                   upstream reach must be equal to one.
+            cross_sectionrecord : [tab6_filename]
+                * tab6_filename (string) character string that defines the path
+                  and filename for the file containing cross-section table data
+                  for the reach. The TAB6_FILENAME file includes the number of
+                  entries in the file and the station elevation data in terms
+                  of the fractional width and the reach depth. Instructions for
+                  creating the TAB6_FILENAME input file are provided in SFR
+                  Reach Cross-Section Table Input File section.
             auxiliaryrecord : [auxname, auxval]
                 * auxname (string) name for the auxiliary variable to be
                   assigned AUXVAL. AUXNAME must match one of the auxiliary
@@ -384,6 +446,9 @@ class ModflowGwfsfr(mfpackage.MFPackage):
     budget_filerecord = ListTemplateGenerator(
         ("gwf6", "sfr", "options", "budget_filerecord")
     )
+    budgetcsv_filerecord = ListTemplateGenerator(
+        ("gwf6", "sfr", "options", "budgetcsv_filerecord")
+    )
     package_convergence_filerecord = ListTemplateGenerator(
         ("gwf6", "sfr", "options", "package_convergence_filerecord")
     )
@@ -395,6 +460,9 @@ class ModflowGwfsfr(mfpackage.MFPackage):
     )
     packagedata = ListTemplateGenerator(
         ("gwf6", "sfr", "packagedata", "packagedata")
+    )
+    crosssections = ListTemplateGenerator(
+        ("gwf6", "sfr", "crosssections", "crosssections")
     )
     connectiondata = ListTemplateGenerator(
         ("gwf6", "sfr", "connectiondata", "connectiondata")
@@ -408,6 +476,7 @@ class ModflowGwfsfr(mfpackage.MFPackage):
     dfn_file_name = "gwf-sfr.dfn"
 
     dfn = [
+        ["header", "multi-package", "package-type advanced-stress-package"],
         [
             "block options",
             "name auxiliary",
@@ -514,6 +583,36 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         [
             "block options",
             "name budgetfile",
+            "type string",
+            "preserve_case true",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged false",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name budgetcsv_filerecord",
+            "type record budgetcsv fileout budgetcsvfile",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name budgetcsv",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name budgetcsvfile",
             "type string",
             "preserve_case true",
             "shape",
@@ -661,6 +760,21 @@ class ModflowGwfsfr(mfpackage.MFPackage):
             "type double precision",
             "reader urword",
             "optional true",
+            "deprecated 6.4.2",
+        ],
+        [
+            "block options",
+            "name length_conversion",
+            "type double precision",
+            "reader urword",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name time_conversion",
+            "type double precision",
+            "reader urword",
+            "optional true",
         ],
         [
             "block dimensions",
@@ -672,14 +786,14 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         [
             "block packagedata",
             "name packagedata",
-            "type recarray rno cellid rlen rwid rgrd rtp rbth rhk man ncon "
+            "type recarray ifno cellid rlen rwid rgrd rtp rbth rhk man ncon "
             "ustrf ndv aux boundname",
             "shape (maxbound)",
             "reader urword",
         ],
         [
             "block packagedata",
-            "name rno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -810,15 +924,64 @@ class ModflowGwfsfr(mfpackage.MFPackage):
             "optional true",
         ],
         [
+            "block crosssections",
+            "name crosssections",
+            "type recarray ifno tab6 filein tab6_filename",
+            "shape",
+            "valid",
+            "optional false",
+            "reader urword",
+        ],
+        [
+            "block crosssections",
+            "name ifno",
+            "type integer",
+            "shape",
+            "tagged false",
+            "in_record true",
+            "reader urword",
+            "numeric_index true",
+        ],
+        [
+            "block crosssections",
+            "name tab6",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block crosssections",
+            "name filein",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block crosssections",
+            "name tab6_filename",
+            "type string",
+            "preserve_case true",
+            "in_record true",
+            "reader urword",
+            "optional false",
+            "tagged false",
+        ],
+        [
             "block connectiondata",
             "name connectiondata",
-            "type recarray rno ic",
+            "type recarray ifno ic",
             "shape (maxbound)",
             "reader urword",
         ],
         [
             "block connectiondata",
-            "name rno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -830,7 +993,7 @@ class ModflowGwfsfr(mfpackage.MFPackage):
             "block connectiondata",
             "name ic",
             "type integer",
-            "shape (ncon(rno))",
+            "shape (ncon(ifno))",
             "tagged false",
             "in_record true",
             "reader urword",
@@ -841,13 +1004,13 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         [
             "block diversions",
             "name diversions",
-            "type recarray rno idv iconr cprior",
+            "type recarray ifno idv iconr cprior",
             "shape (maxbound)",
             "reader urword",
         ],
         [
             "block diversions",
-            "name rno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -899,13 +1062,13 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         [
             "block period",
             "name perioddata",
-            "type recarray rno sfrsetting",
+            "type recarray ifno sfrsetting",
             "shape",
             "reader urword",
         ],
         [
             "block period",
-            "name rno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -917,7 +1080,8 @@ class ModflowGwfsfr(mfpackage.MFPackage):
             "block period",
             "name sfrsetting",
             "type keystring status manning stage inflow rainfall evaporation "
-            "runoff diversionrecord upstream_fraction auxiliaryrecord",
+            "runoff diversionrecord upstream_fraction cross_sectionrecord "
+            "auxiliaryrecord",
             "shape",
             "tagged false",
             "in_record true",
@@ -1040,6 +1204,55 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         ],
         [
             "block period",
+            "name cross_sectionrecord",
+            "type record cross_section tab6 filein tab6_filename",
+            "shape",
+            "tagged",
+            "in_record true",
+            "reader urword",
+        ],
+        [
+            "block period",
+            "name cross_section",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block period",
+            "name tab6",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block period",
+            "name filein",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block period",
+            "name tab6_filename",
+            "type string",
+            "preserve_case true",
+            "in_record true",
+            "reader urword",
+            "optional false",
+            "tagged false",
+        ],
+        [
+            "block period",
             "name auxiliaryrecord",
             "type record auxiliary auxname auxval",
             "shape",
@@ -1088,6 +1301,7 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         save_flows=None,
         stage_filerecord=None,
         budget_filerecord=None,
+        budgetcsv_filerecord=None,
         package_convergence_filerecord=None,
         timeseries=None,
         observations=None,
@@ -1096,17 +1310,20 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         maximum_iterations=None,
         maximum_depth_change=None,
         unit_conversion=None,
+        length_conversion=None,
+        time_conversion=None,
         nreaches=None,
         packagedata=None,
+        crosssections=None,
         connectiondata=None,
         diversions=None,
         perioddata=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "sfr", filename, pname, loading_package, parent_file
+            model, "sfr", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -1121,6 +1338,9 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         )
         self.budget_filerecord = self.build_mfdata(
             "budget_filerecord", budget_filerecord
+        )
+        self.budgetcsv_filerecord = self.build_mfdata(
+            "budgetcsv_filerecord", budgetcsv_filerecord
         )
         self.package_convergence_filerecord = self.build_mfdata(
             "package_convergence_filerecord", package_convergence_filerecord
@@ -1146,8 +1366,15 @@ class ModflowGwfsfr(mfpackage.MFPackage):
         self.unit_conversion = self.build_mfdata(
             "unit_conversion", unit_conversion
         )
+        self.length_conversion = self.build_mfdata(
+            "length_conversion", length_conversion
+        )
+        self.time_conversion = self.build_mfdata(
+            "time_conversion", time_conversion
+        )
         self.nreaches = self.build_mfdata("nreaches", nreaches)
         self.packagedata = self.build_mfdata("packagedata", packagedata)
+        self.crosssections = self.build_mfdata("crosssections", crosssections)
         self.connectiondata = self.build_mfdata(
             "connectiondata", connectiondata
         )

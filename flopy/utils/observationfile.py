@@ -1,7 +1,11 @@
-import numpy as np
 import io
-from ..utils.utils_def import FlopyBinaryData
+
+import numpy as np
+import pandas as pd
+
+from ..utils import import_optional_dependency
 from ..utils.flopy_io import get_ts_sp
+from ..utils.utils_def import FlopyBinaryData
 
 
 class ObsFiles(FlopyBinaryData):
@@ -174,12 +178,7 @@ class ObsFiles(FlopyBinaryData):
 
         """
 
-        try:
-            import pandas as pd
-            from ..utils.utils_def import totim_to_datetime
-        except Exception as e:
-            msg = "ObsFiles.get_dataframe() error import pandas: " + str(e)
-            raise ImportError(msg)
+        from ..utils.utils_def import totim_to_datetime
 
         i0 = 0
         i1 = self.data.shape[0]
@@ -216,7 +215,6 @@ class ObsFiles(FlopyBinaryData):
         return df
 
     def _read_data(self):
-
         if self.data is not None:
             return
 
@@ -294,7 +292,7 @@ class Mf6Obs(ObsFiles):
                     isBinary = True
                 else:
                     err = "Could not determine if file is binary or ascii"
-                    raise IOError(err)
+                    raise ValueError(err)
         if isBinary:
             # --open binary head file
             self.file = open(filename, "rb")
@@ -493,21 +491,32 @@ class CsvFile:
     delimiter : str
         optional delimiter for the csv or formatted text file,
         defaults to ","
+    deletechars : str
+        optional string containing characters that should be deleted
+        from the column names, defaults to ""
+    replace_space : str
+        optional string containing the character that will be used to replace
+        the space with in any column names, defaults to ""
 
     """
 
-    def __init__(self, csvfile, delimiter=","):
+    def __init__(
+        self, csvfile, delimiter=",", deletechars="", replace_space=""
+    ):
+        with open(csvfile) as self.file:
+            self.delimiter = delimiter
+            self.deletechars = deletechars
+            self.replace_space = replace_space
 
-        self.file = open(csvfile, "r")
-        self.delimiter = delimiter
+            # read header line
+            line = self.file.readline()
+            self._header = line.rstrip().split(delimiter)
+            self.floattype = "f8"
+            self.dtype = _build_dtype(self._header, self.floattype)
 
-        # read header line
-        line = self.file.readline()
-        self._header = line.rstrip().split(delimiter)
-        self.floattype = "f8"
-        self.dtype = _build_dtype(self._header, self.floattype)
-
-        self.data = self.read_csv(self.file, self.dtype, delimiter)
+            self.data = self.read_csv(
+                self.file, self.dtype, delimiter, deletechars, replace_space
+            )
 
     @property
     def obsnames(self):
@@ -532,7 +541,7 @@ class CsvFile:
         return len(self.obsnames)
 
     @staticmethod
-    def read_csv(fobj, dtype, delimiter=","):
+    def read_csv(fobj, dtype, delimiter=",", deletechars="", replace_space=""):
         """
 
         Parameters
@@ -543,12 +552,26 @@ class CsvFile:
         delimiter : str
             optional delimiter for the csv or formatted text file,
             defaults to ","
+        deletechars : str
+            optional string containing characters that should be deleted
+            from the column names, defaults to ""
+        replace_space : str
+            optional string containing the character that will be used to replace
+            the space with in any column names, defaults to ""
 
         Returns
         -------
         np.recarray
         """
-        arr = np.genfromtxt(fobj, dtype=dtype, delimiter=delimiter)
+        arr = np.genfromtxt(
+            fobj,
+            dtype=dtype,
+            delimiter=delimiter,
+            deletechars=deletechars,
+            replace_space=replace_space,
+        )
+        if len(arr.shape) == 0:
+            arr = arr.reshape((1,))
         return arr.view(np.recarray)
 
 
@@ -574,9 +597,9 @@ def get_selection(data, names):
     for name in names:
         if name not in data.dtype.names:
             ierr += 1
-            print("Error: {} is not a valid column name".format(name))
+            print(f"Error: {name} is not a valid column name")
     if ierr > 0:
-        raise Exception("Error: {} names did not match".format(ierr))
+        raise Exception(f"Error: {ierr} names did not match")
 
     # Valid list of names so make a selection
     dtype2 = np.dtype({name: data.dtype.fields[name] for name in names})

@@ -5,12 +5,13 @@ modeldimensions module.  Contains the model dimension information
 """
 
 import sys
-from .simulationtime import SimulationTime
-from .modelgrid import UnstructuredModelGrid, ModelGrid
-from ..mfbase import StructException, FlopyException, VerbosityLevel
-from ..data.mfstructure import DatumType
-from ..utils.mfenums import DiscretizationType
+
 from ...utils.datautil import DatumUtil, NameIter
+from ..data.mfstructure import DatumType
+from ..mfbase import FlopyException, StructException, VerbosityLevel
+from ..utils.mfenums import DiscretizationType
+from .modelgrid import ModelGrid, UnstructuredModelGrid
+from .simulationtime import SimulationTime
 
 
 class DataDimensions:
@@ -65,15 +66,17 @@ class DataDimensions:
         self.locked = False
         self.package_dim.unlock()
 
-    def get_model_grid(self, data_item_num=None):
+    def get_model_grid(self, data_item_num=None, model_num=None):
         if self.locked:
-            if self.model_grid is None:
+            if self.model_grid is None or model_num is not None:
                 self.model_grid = self.get_model_dim(
-                    data_item_num
+                    data_item_num, model_num
                 ).get_model_grid()
             return self.model_grid
         else:
-            return self.get_model_dim(data_item_num).get_model_grid()
+            return self.get_model_dim(
+                data_item_num, model_num
+            ).get_model_grid()
 
     def get_data_shape(
         self,
@@ -99,24 +102,37 @@ class DataDimensions:
             subspace_string
         )
 
-    def get_model_dim(self, data_item_num):
+    def get_model_dim(self, data_item_num, model_num=None):
         if (
             self.package_dim.model_dim is None
-            or data_item_num is None
+            or (data_item_num is None and model_num is None)
             or len(self.package_dim.model_dim) == 1
         ):
             return self.package_dim.model_dim[0]
         else:
-            if not (len(self.structure.data_item_structures) > data_item_num):
-                raise FlopyException(
-                    'Data item index "{}" requested which '
-                    "is greater than the maximum index of"
-                    "{}.".format(
-                        data_item_num,
-                        len(self.structure.data_item_structures) - 1,
+            if model_num is None:
+                model_num = self.structure.data_item_structures[data_item_num][
+                    -1
+                ]
+                if not (
+                    len(self.structure.data_item_structures) > data_item_num
+                ):
+                    raise FlopyException(
+                        'Data item index "{}" requested which '
+                        "is greater than the maximum index of"
+                        "{}.".format(
+                            data_item_num,
+                            len(self.structure.data_item_structures) - 1,
+                        )
                     )
-                )
-            model_num = self.structure.data_item_structures[data_item_num][-1]
+            else:
+                if not len(self.package_dim.model_dim) > model_num:
+                    raise FlopyException(
+                        f'Model item index "{model_num}" requested which '
+                        "is greater than the maximum index of"
+                        f"{len(self.package_dim.model_dim)}."
+                    )
+
             if DatumUtil.is_int(model_num):
                 return self.package_dim.model_dim[int(model_num)]
 
@@ -469,7 +485,6 @@ class ModelDimensions:
                             data_item_struct, repeating_key=repeating_key
                         )
                     else:
-
                         (
                             dim,
                             shape_rule,
@@ -600,10 +615,10 @@ class ModelDimensions:
                                 if data is None:
                                     if (
                                         self.simulation_data.verbosity_level.value
-                                        >= VerbosityLevel.normal.value
+                                        >= VerbosityLevel.verbose.value
                                     ):
                                         print(
-                                            "WARNING: Unable to resolve "
+                                            "INFORMATION: Unable to resolve "
                                             "dimension of {} based on shape "
                                             '"{}".'.format(
                                                 data_item_struct.path, item[0]
@@ -636,10 +651,10 @@ class ModelDimensions:
                             else:
                                 if (
                                     self.simulation_data.verbosity_level.value
-                                    >= VerbosityLevel.normal.value
+                                    >= VerbosityLevel.verbose.value
                                 ):
                                     print(
-                                        "WARNING: Unable to resolve "
+                                        "INFORMATION: Unable to resolve "
                                         "dimension of {} based on shape "
                                         '"{}".'.format(
                                             data_item_struct.path, item[0]

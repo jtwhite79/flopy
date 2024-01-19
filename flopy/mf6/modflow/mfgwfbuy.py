@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfbuy(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -38,9 +38,8 @@ class ModflowGwfbuy(mfpackage.MFPackage):
           aquifer conditions and should generally not be used.
     nrhospecies : integer
         * nrhospecies (integer) number of species used in density equation of
-          state. This value must be one or greater. The value must be one if
-          concentrations are specified using the CONCENTRATION keyword in the
-          PERIOD block below.
+          state. This value must be one or greater if the BUY package is
+          activated.
     packagedata : [irhospec, drhodc, crhoref, modelname, auxspeciesname]
         * irhospec (integer) integer value that defines the species number
           associated with the specified PACKAGEDATA data on the line.
@@ -60,7 +59,7 @@ class ModflowGwfbuy(mfpackage.MFPackage):
           value used for this species in the density equation of state.
         * modelname (string) name of GWT model used to simulate a species that
           will be used in the density equation of state. This name will have no
-          affect if the simulation does not include a GWT model that
+          effect if the simulation does not include a GWT model that
           corresponds to this GWF model.
         * auxspeciesname (string) name of an auxiliary variable in a GWF stress
           package that will be used for this species to calculate a density
@@ -97,6 +96,9 @@ class ModflowGwfbuy(mfpackage.MFPackage):
 
     dfn = [
         [
+            "header",
+        ],
+        [
             "block options",
             "name hhformulation_rhs",
             "type keyword",
@@ -106,7 +108,7 @@ class ModflowGwfbuy(mfpackage.MFPackage):
         [
             "block options",
             "name denseref",
-            "type double",
+            "type double precision",
             "reader urword",
             "optional true",
             "default_value 1000.",
@@ -232,10 +234,10 @@ class ModflowGwfbuy(mfpackage.MFPackage):
         packagedata=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "buy", filename, pname, loading_package, parent_file
+            model, "buy", filename, pname, loading_package, **kwargs
         )
 
         # set up variables

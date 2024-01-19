@@ -1,6 +1,4 @@
-import sys
 import numpy as np
-from collections import OrderedDict
 
 from ..utils.utils_def import FlopyBinaryData
 
@@ -67,12 +65,9 @@ class SwrFile(FlopyBinaryData):
         if swrtype.lower() in self.types:
             self.type = swrtype.lower()
         else:
-            err = (
-                "SWR type ({}) is not defined. ".format(type)
-                + "Available types are:\n"
-            )
+            err = f"SWR type ({type}) is not defined. Available types are:\n"
             for t in self.types:
-                err = "{}  {}\n".format(err, t)
+                err += f"  {t}\n"
             raise Exception(err)
 
         # set data dtypes
@@ -314,10 +309,10 @@ class SwrFile(FlopyBinaryData):
         """
 
         if irec + 1 > self.nrecord:
-            err = "Error: specified irec ({}) ".format(
-                irec
-            ) + "exceeds the total number of records ()".format(self.nrecord)
-            raise Exception(err)
+            raise Exception(
+                f"specified irec ({irec}) exceeds the "
+                f"total number of records ({self.nrecord})"
+            )
 
         gage_record = None
         if self.type == "stage" or self.type == "budget":
@@ -413,7 +408,7 @@ class SwrFile(FlopyBinaryData):
                 self.nitems = nitems
             except:
                 if self.verbose:
-                    sys.stdout.write("\nCould not read itemlist")
+                    print("Could not read itemlist")
                 return 0.0, 0.0, 0, 0, 0, False
         try:
             totim = self.read_real()
@@ -428,7 +423,6 @@ class SwrFile(FlopyBinaryData):
             return 0.0, 0.0, 0, 0, 0, False
 
     def _get_ts(self, irec=0):
-
         # create array
         gage_record = np.zeros(self._ntimes, dtype=self.out_dtype)
 
@@ -447,7 +441,6 @@ class SwrFile(FlopyBinaryData):
         return gage_record.view(dtype=self.out_dtype)
 
     def _get_ts_qm(self, irec=0, iconn=0):
-
         # create array
         gage_record = np.zeros(self._ntimes, dtype=self.out_dtype)
 
@@ -473,7 +466,6 @@ class SwrFile(FlopyBinaryData):
         return gage_record.view(dtype=self.out_dtype)
 
     def _get_ts_qaq(self, irec=0, klay=0):
-
         # create array
         gage_record = np.zeros(self._ntimes, dtype=self.out_dtype)
 
@@ -502,7 +494,6 @@ class SwrFile(FlopyBinaryData):
         return gage_record.view(dtype=self.out_dtype)
 
     def _get_ts_structure(self, irec=0, istr=0):
-
         # create array
         gage_record = np.zeros(self._ntimes, dtype=self.out_dtype)
 
@@ -539,7 +530,6 @@ class SwrFile(FlopyBinaryData):
             return self.read_record(count=self.nrecord)
 
     def _read_qaq(self):
-
         # read qaq data using standard record reader
         bd = self.read_record(count=self.nitems)
         bd["layer"] -= 1
@@ -566,7 +556,6 @@ class SwrFile(FlopyBinaryData):
         return r
 
     def _read_structure(self):
-
         # read qaq data using standard record reader
         bd = self.read_record(count=self.nitems)
 
@@ -600,11 +589,11 @@ class SwrFile(FlopyBinaryData):
         """
         self.file.seek(self.datastart)
         if self.verbose:
-            sys.stdout.write("Generating SWR binary data time list\n")
+            print("Generating SWR binary data time list")
         self._ntimes = 0
         self._times = []
         self._kswrkstpkper = []
-        self.recorddict = OrderedDict()
+        self.recorddict = {}
 
         idx = 0
         while True:
@@ -614,7 +603,7 @@ class SwrFile(FlopyBinaryData):
             if self.verbose:
                 v = divmod(float(idx), 72.0)
                 if v[1] == 0.0:
-                    sys.stdout.write(".")
+                    print(".", end="")
             # read header
             totim, dt, kper, kstp, kswr, success = self._read_header()
             if success:
@@ -637,7 +626,7 @@ class SwrFile(FlopyBinaryData):
                 self._recordarray.append(header)
             else:
                 if self.verbose:
-                    sys.stdout.write("\n")
+                    print()
                 self._recordarray = np.array(
                     self._recordarray, dtype=self.header_dtype
                 )

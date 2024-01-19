@@ -2,13 +2,14 @@
 Module for input/output utilities
 """
 import os
+import platform
 import sys
-import numpy as np
+from pathlib import Path
+from shutil import which
+from typing import Union
 
-try:
-    import pandas as pd
-except:
-    pd = False
+import numpy as np
+import pandas as pd
 
 
 def _fmt_string(array, float_format="{}"):
@@ -33,7 +34,7 @@ def _fmt_string(array, float_format="{}"):
         if vtype == "i":
             fmt_string += "{:.0f} "
         elif vtype == "f":
-            fmt_string += "{} ".format(float_format)
+            fmt_string += f"{float_format} "
         elif vtype == "o":
             fmt_string += "{} "
         elif vtype == "s":
@@ -44,7 +45,7 @@ def _fmt_string(array, float_format="{}"):
             )
         else:
             raise Exception(
-                "MfList.fmt_string error: unknown vtype in dtype:" + vtype
+                f"MfList.fmt_string error: unknown vtype in dtype:{vtype}"
             )
     return fmt_string
 
@@ -185,21 +186,25 @@ def write_fixed_var(v, length=10, ipos=None, free=False, comment=None):
         if free:
             write_fmt = "{} "
         else:
+            width = ipos[n]
             if isinstance(v[n], (float, np.float32, np.float64)):
-                width = ipos[n] - 6
-                vmin, vmax = 10 ** -width, 10 ** width
+                decimal = width - 6
+                vmin, vmax = 10**-decimal, 10**decimal
                 if abs(v[n]) < vmin or abs(v[n]) > vmax:
-                    ctype = "g"
+                    ctype = "g"  # default precision is 6 if not specified
                 else:
-                    ctype = ".{}f".format(width)
+                    ctype = f".{decimal}f"
+                    # evaluate if the fixed format value will exceed width
+                    if len(f"{{:>{width}{ctype}}}".format(v[n])) > width:
+                        ctype = f".{decimal}g"  # preserve precision
             elif isinstance(v[n], (int, np.int32, np.int64)):
                 ctype = "d"
             else:
                 ctype = ""
-            write_fmt = "{{:>{}{}}}".format(ipos[n], ctype)
+            write_fmt = f"{{:>{width}{ctype}}}"
         out += write_fmt.format(v[n])
     if comment is not None:
-        out += "  # {}".format(comment)
+        out += f"  # {comment}"
     out += "\n"
     return out
 
@@ -229,7 +234,7 @@ def read_fixed_var(line, ncol=1, length=10, ipos=None, free=False):
 
     """
     if free:
-        out = line.rstrip().split()
+        out = line_parse(line)
     else:
         # construct ipos if it was not passed
         if ipos is None:
@@ -277,9 +282,9 @@ def flux_to_wel(cbc_file, text, precision="single", model=None, verbose=False):
     flopy.modflow.ModflowWel instance
 
     """
+    from ..modflow import Modflow, ModflowWel
     from . import CellBudgetFile as CBF
     from .util_list import MfList
-    from ..modflow import Modflow, ModflowWel
 
     cbf = CBF(cbc_file, precision=precision, verbose=verbose)
 
@@ -290,7 +295,6 @@ def flux_to_wel(cbc_file, text, precision="single", model=None, verbose=False):
     # process the records in the cell budget file
     iper = -1
     for kstpkper in cbf.kstpkper:
-
         kstpkper = (kstpkper[0] - 1, kstpkper[1] - 1)
         kper = kstpkper[1]
         # if we haven't visited this kper yet
@@ -323,9 +327,9 @@ def loadtxt(
     file, delimiter=" ", dtype=None, skiprows=0, use_pandas=True, **kwargs
 ):
     """
-    Use pandas if it is available to load a text file
+    Use pandas to load a text file
     (significantly faster than n.loadtxt or genfromtxt see
-    http://stackoverflow.com/questions/18259393/numpy-loading-csv-too-slow-compared-to-matlab)
+    https://stackoverflow.com/q/18259393/)
 
     Parameters
     ----------
@@ -347,16 +351,15 @@ def loadtxt(
     ra : np.recarray
         Numpy record array of file contents.
     """
-    # test if pandas should be used, if available
-    if use_pandas:
-        if pd:
-            if delimiter.isspace():
-                kwargs["delim_whitespace"] = True
-            if isinstance(dtype, np.dtype) and "names" not in kwargs:
-                kwargs["names"] = dtype.names
+    from ..utils import import_optional_dependency
 
-    # if use_pandas and pd then use pandas
-    if use_pandas and pd:
+    if use_pandas:
+        if delimiter.isspace():
+            kwargs["delim_whitespace"] = True
+        if isinstance(dtype, np.dtype) and "names" not in kwargs:
+            kwargs["names"] = dtype.names
+
+    if use_pandas:
         df = pd.read_csv(file, dtype=dtype, skiprows=skiprows, **kwargs)
         return df.to_records(index=False)
     # default use of numpy
@@ -415,7 +418,7 @@ def ulstrd(f, nlist, ra, model, sfac_columns, ext_unit_dict):
     sfac = 1.0
     binary = False
     ncol = len(ra.dtype.names)
-    line_list = line.strip().split()
+    line_list = line_parse(line)
     close_the_file = False
     file_handle = f
     mode = "r"
@@ -423,15 +426,15 @@ def ulstrd(f, nlist, ra, model, sfac_columns, ext_unit_dict):
     # check for external
     if line.strip().lower().startswith("external"):
         inunit = int(line_list[1])
-        errmsg = "Could not find a file for unit {}".format(inunit)
+        errmsg = f"Could not find a file for unit {inunit}"
         if ext_unit_dict is not None:
             if inunit in ext_unit_dict:
                 namdata = ext_unit_dict[inunit]
                 file_handle = namdata.filehandle
             else:
-                raise IOError(errmsg)
+                raise OSError(errmsg)
         else:
-            raise IOError(errmsg)
+            raise OSError(errmsg)
         if namdata.filetype == "DATA(BINARY)":
             binary = True
         if not binary:
@@ -449,11 +452,7 @@ def ulstrd(f, nlist, ra, model, sfac_columns, ext_unit_dict):
             raw = [fname]
         fname = os.path.join(*raw)
         oc_filename = os.path.join(model.model_ws, fname)
-        msg = (
-            "Package.load() error: open/close filename "
-            + oc_filename
-            + " not found"
-        )
+        msg = f"Package.load() error: open/close filename {oc_filename} not found"
         assert os.path.exists(oc_filename), msg
         if "(binary)" in line.lower():
             binary = True
@@ -465,8 +464,8 @@ def ulstrd(f, nlist, ra, model, sfac_columns, ext_unit_dict):
 
     # check for scaling factor
     if not binary:
-        line_list = line.strip().split()
         if line.strip().lower().startswith("sfac"):
+            line_list = line_parse(line)
             sfac = float(line_list[1])
             line = file_handle.readline()
 
@@ -482,16 +481,14 @@ def ulstrd(f, nlist, ra, model, sfac_columns, ext_unit_dict):
 
     # else, read ascii
     else:
-
         for ii in range(nlist):
-
             # first line was already read
             if ii != 0:
                 line = file_handle.readline()
 
             if model.free_format_input:
                 # whitespace separated
-                t = line.strip().split()
+                t = line_parse(line)
                 if len(t) < ncol:
                     t = t + (ncol - len(t)) * [0.0]
                 else:
@@ -536,12 +533,79 @@ def get_ts_sp(line):
 
     searchstring = "TIME STEP"
     idx = line.index(searchstring) + len(searchstring)
-    ll = line[idx:].strip().split()
+    ll = line_parse(line[idx:])
     ts = int(ll[0])
 
     searchstring = "STRESS PERIOD"
     idx = line.index(searchstring) + len(searchstring)
-    ll = line[idx:].strip().split()
+    ll = line_parse(line[idx:])
     sp = int(ll[0])
 
     return ts, sp
+
+
+def relpath_safe(
+    path: Union[str, os.PathLike],
+    start: Union[str, os.PathLike] = os.curdir,
+    scrub: bool = False,
+) -> str:
+    """
+    Return a relative version of the path starting at the given start path.
+    This is impossible on Windows if the paths are on different drives, in
+    which case the absolute path is returned. The builtin os.path.relpath
+    raises a ValueError, this method is a workaround to avoid interrupting
+    normal control flow (background at https://bugs.python.org/issue7195).
+
+    This method also truncates/obfuscates absolute paths with usernames.
+
+    Parameters
+    ----------
+    path : str or PathLike
+        the path to truncate relative to the start path
+    start : str or PathLike, default "."
+        the starting path, defaults to the current working directory
+    scrub : bool, default False
+        whether to remove the current login name from paths
+    Returns
+    -------
+        str : the relative path, unless the platform is Windows and the `path`
+        is not on the same drive as `start`, in which case the absolute path,
+        with elements before and including usernames removed and obfuscated
+    """
+
+    if start == os.curdir:
+        start = os.getcwd()
+
+    if platform.system() == "Windows":
+        pa = os.path.abspath(path)
+        sa = os.path.abspath(start)
+        pd = os.path.splitdrive(pa)[0].lower()
+        sd = os.path.splitdrive(sa)[0].lower()
+        p = os.path.abspath(path) if pd != sd else os.path.relpath(pa, sa)
+    else:
+        p = os.path.relpath(path, start)
+
+    return scrub_login(p) if scrub else p
+
+
+def scrub_login(s: str) -> str:
+    """
+    Remove the current login name from the given string,
+    replacing any occurences with "***".
+
+    Parameters
+    ----------
+    s : str
+        the input string
+
+    Returns
+    -------
+        the string with login name obfuscated
+    """
+
+    try:
+        login = os.getlogin()
+        return s.replace(login, "***")
+    except OSError:
+        # OSError is possible in CI, e.g. 'No such device or address'
+        return s

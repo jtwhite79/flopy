@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfnam(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -77,11 +77,15 @@ class ModflowGwfnam(mfpackage.MFPackage):
 
     dfn = [
         [
+            "header",
+        ],
+        [
             "block options",
             "name list",
             "type string",
             "reader urword",
             "optional true",
+            "preserve_case true",
         ],
         [
             "block options",
@@ -173,10 +177,10 @@ class ModflowGwfnam(mfpackage.MFPackage):
         packages=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "nam", filename, pname, loading_package, parent_file
+            model, "nam", filename, pname, loading_package, **kwargs
         )
 
         # set up variables

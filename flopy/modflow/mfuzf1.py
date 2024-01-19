@@ -1,21 +1,19 @@
-﻿"""
+"""
 mfuzf1 module.  Contains the ModflowUzf1 class. Note that the user can access
 the ModflowUzf1 class as `flopy.modflow.ModflowUzf1`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<https://water.usgs.gov/nrp/gwsoftware/modflow2000/MFDOC/index.html?uzf_unsaturated_zone_flow_pack.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/uzf_-_unsaturated_zone_flow_pa_3.html>`_.
 
 """
 
-import sys
 import numpy as np
-from ..utils.flopy_io import pop_item, line_parse
+
 from ..pakbase import Package
-from ..utils import Util2d, Transient2d
+from ..utils import Transient2d, Util2d
+from ..utils.flopy_io import line_parse, multi_line_strip, pop_item
 from ..utils.optionblock import OptionBlock
-from collections import OrderedDict
-import warnings
 
 
 class ModflowUzf1(Package):
@@ -59,14 +57,9 @@ class ModflowUzf1(Package):
         specifies whether or not evapotranspiration (ET) will be simulated.
         ET will not be simulated if IETFLG is zero, otherwise it will be
         simulated. (default is 0)
-    ipakcb : integer
-        flag for writing ground-water recharge, ET, and ground-water
-        discharge to land surface rates to a separate unformatted file using
-        subroutine UBUDSV. If ipakcb>0, it is the unit number to which the
-        cell-by-cell rates will be written when 'SAVE BUDGET' or a non-zero
-        value for ICBCFL is specified in Output Control. If ipakcb less than
-        or equal to 0, cell-by-cell rates will not be written to a file.
-        (default is 57)
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     iuzfcb2 : integer
         flag for writing ground-water recharge, ET, and ground-water
         discharge to land surface rates to a separate unformatted file using
@@ -140,15 +133,6 @@ class ModflowUzf1(Package):
             followed by a series of depths and water contents in the
             unsaturated zone.
 
-    nwt_11_fmt : boolean
-        flag indicating whether or not to utilize a newer (MODFLOW-NWT
-        version 1.1 or later) format style, i.e., uzf1 optional variables
-        appear line-by-line rather than in a specific order on a single
-        line. True means that optional variables (e.g., SPECIFYTHTR,
-        SPECIFYTHTI, NOSURFLEAK) appear on new lines. True also supports
-        a number of newer optional variables (e.g., SPECIFYSURFK,
-        REJECTSURFK, SEEPSURFK). False means that optional variables
-        appear on one line.  (default is False)
     specifythtr : boolean
         key word for specifying optional input variable THTR (default is 0)
     specifythti : boolean
@@ -276,7 +260,7 @@ class ModflowUzf1(Package):
         and package extension and the cbc output, uzf output, and uzf
         observation names will be created using the model name and .cbc,
         uzfcb2.bin, and  .uzf#.out extensions (for example, modflowtest.cbc,
-        and modflowtest.uzfcd2.bin), if ipakcbc, iuzfcb2, and len(uzgag) are
+        and modflowtest.uzfcd2.bin), if ipakcb, iuzfcb2, and len(uzgag) are
         numbers greater than zero. For uzf observations the file extension is
         created using the uzf observation file unit number (for example, for
         uzf observations written to unit 123 the file extension would be
@@ -318,7 +302,7 @@ class ModflowUzf1(Package):
 
     """
 
-    _options = OrderedDict(
+    _options = dict(
         [
             ("specifythtr", OptionBlock.simple_flag),
             ("specifythti", OptionBlock.simple_flag),
@@ -342,7 +326,7 @@ class ModflowUzf1(Package):
                     OptionBlock.dtype: np.bool_,
                     OptionBlock.nested: True,
                     OptionBlock.n_nested: 2,
-                    OptionBlock.vars: OrderedDict(
+                    OptionBlock.vars: dict(
                         [
                             ("unitrech", OptionBlock.simple_int),
                             ("unitdis", OptionBlock.simple_int),
@@ -383,7 +367,6 @@ class ModflowUzf1(Package):
         air_entry=0.0,
         hroot=0.0,
         rootact=0.0,
-        nwt_11_fmt=False,
         specifysurfk=False,
         rejectsurfk=False,
         seepsurfk=False,
@@ -398,7 +381,6 @@ class ModflowUzf1(Package):
         options=None,
         surfk=0.1,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowUzf1._defaultunit()
@@ -407,31 +389,17 @@ class ModflowUzf1(Package):
         nlen = 3
         if uzgag is not None:
             nlen += len(uzgag)
-        if filenames is None:
-            filenames = [None for x in range(nlen)]
-        elif isinstance(filenames, str):
-            filenames = [filenames] + [None for x in range(nlen)]
-        elif isinstance(filenames, list):
-            if len(filenames) < nlen:
-                for idx in range(len(filenames), nlen + 1):
-                    filenames.append(None)
+        filenames = self._prepare_filenames(filenames, nlen)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                abs(ipakcb), fname=fname, package=ModflowUzf1._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
         if iuzfcb2 is not None:
-            fname = filenames[2]
             model.add_output_file(
                 abs(iuzfcb2),
-                fname=fname,
+                fname=filenames[2],
                 extension="uzfcb2.bin",
-                package=ModflowUzf1._ftype(),
+                package=self._ftype(),
             )
         else:
             iuzfcb2 = 0
@@ -448,15 +416,13 @@ class ModflowUzf1(Package):
                         d[-np.abs(l[0])] = []
                 uzgag = d
             for key, value in uzgag.items():
-                fname = filenames[ipos]
                 iu = abs(key)
-                uzgagext = "uzf{}.out".format(iu)
                 model.add_output_file(
                     iu,
-                    fname=fname,
+                    fname=filenames[ipos],
                     binflag=False,
-                    extension=uzgagext,
-                    package=ModflowUzf1._ftype(),
+                    extension=f"uzf{iu}.out",
+                    package=self._ftype(),
                 )
                 ipos += 1
                 # handle case where iftunit is listed in the values
@@ -466,29 +432,18 @@ class ModflowUzf1(Package):
                 elif len(value) == 1:
                     uzgag[-np.abs(key)] = []
 
-        # Fill namefile items
-        name = [ModflowUzf1._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         if (
-            self.parent.get_package("RCH") != None
-            or self.parent.get_package("EVT") != None
+            self.parent.get_package("RCH") is not None
+            or self.parent.get_package("EVT") is not None
         ):
             print(
                 "WARNING!\n The RCH and EVT packages should not be "
@@ -501,23 +456,10 @@ class ModflowUzf1(Package):
             )
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
 
-        self.heading = (
-            "# {} package for ".format(self.name[0])
-            + " {}, ".format(model.version_types[model.version])
-            + "generated by Flopy."
-        )
-        self.url = "uzf_unsaturated_zone_flow_pack.htm"
+        self._generate_heading()
+        self.url = "uzf_-_unsaturated_zone_flow_pa_3.html"
 
         # Data Set 1a
-        if nwt_11_fmt:
-            warnings.warn(
-                "nwt_11_fmt has been deprecated,"
-                " and will be removed in the next release"
-                " please provide a flopy.utils.OptionBlock object"
-                " to the options argument",
-                DeprecationWarning,
-            )
-        self.nwt_11_fmt = nwt_11_fmt
         self.specifythtr = bool(specifythtr)
         self.specifythti = bool(specifythti)
         self.nosurfleak = bool(nosurfleak)
@@ -571,7 +513,6 @@ class ModflowUzf1(Package):
         # must be active if IRUNFLG is not zero.
         self.irunflg = irunflg
         self.ietflg = ietflg
-        self.ipakcb = ipakcb
         self.iuzfcb2 = iuzfcb2
         if iuzfopt > 0:
             self.ntrail2 = ntrail2
@@ -723,38 +664,16 @@ class ModflowUzf1(Package):
         return nrow * ncol
 
     def _write_1a(self, f_uzf):
-
-        # the nwt_11_fmt code is slated for removal (deprecated!)
-        if not self.nwt_11_fmt:
-            specify_temp = ""
-            if self.specifythtr > 0:
-                specify_temp += "SPECIFYTHTR "
-            if self.specifythti > 0:
-                specify_temp += "SPECIFYTHTI "
-            if self.nosurfleak > 0:
-                specify_temp += "NOSURFLEAK"
-            if (self.specifythtr + self.specifythti + self.nosurfleak) > 0:
-                f_uzf.write("{}\n".format(specify_temp))
-            del specify_temp
-        else:
-            txt = "options\n"
-            for var in [
-                "specifythtr",
-                "specifythti",
-                "nosurfleak",
-                "specifysurfk",
-                "rejectsurfk",
-                "seepsurfk",
-            ]:
-                value = self.__dict__[var]
-                if int(value) > 0:
-                    txt += "{}\n".format(var)
-            if self.etsquare:
-                txt += "etsquare {}\n".format(self.smoothfact)
-            if self.netflux:
-                txt += "netflux {} {}\n".format(self.unitrech, self.unitdis)
-            txt += "end\n"
-            f_uzf.write(txt)
+        specify_temp = ""
+        if self.specifythtr > 0:
+            specify_temp += "SPECIFYTHTR "
+        if self.specifythti > 0:
+            specify_temp += "SPECIFYTHTI "
+        if self.nosurfleak > 0:
+            specify_temp += "NOSURFLEAK"
+        if (self.specifythtr + self.specifythti + self.nosurfleak) > 0:
+            f_uzf.write(f"{specify_temp}\n")
+        del specify_temp
 
     def write_file(self, f=None):
         """
@@ -774,7 +693,7 @@ class ModflowUzf1(Package):
                 f_uzf = f
         else:
             f_uzf = open(self.fn_path, "w")
-        f_uzf.write("{}\n".format(self.heading))
+        f_uzf.write(f"{self.heading}\n")
 
         # Dataset 1a
         if (
@@ -791,7 +710,7 @@ class ModflowUzf1(Package):
         if self.iuzfopt > 0:
             comment = " #NUZTOP IUZFOPT IRUNFLG IETFLG ipakcb IUZFCB2 NTRAIL NSETS NUZGAGES"
             f_uzf.write(
-                "{0:10d}{1:10d}{2:10d}{3:10d}{4:10d}{5:10d}{6:10d}{7:10d}{8:10d}{9:15.6E}{10:100s}\n".format(
+                "{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}{:15.6E}{:100s}\n".format(
                     self.nuztop,
                     self.iuzfopt,
                     self.irunflg,
@@ -808,7 +727,7 @@ class ModflowUzf1(Package):
         else:
             comment = " #NUZTOP IUZFOPT IRUNFLG IETFLG ipakcb IUZFCB2 NUZGAGES"
             f_uzf.write(
-                "{0:10d}{1:10d}{2:10d}{3:10d}{4:10d}{5:10d}{6:10d}{7:15.6E}{8:100s}\n".format(
+                "{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}{:15.6E}{:100s}\n".format(
                     self.nuztop,
                     self.iuzfopt,
                     self.irunflg,
@@ -862,18 +781,18 @@ class ModflowUzf1(Package):
                     comment = " #IUZROW IUZCOL IFTUNIT IUZOPT"
                     values.insert(2, iftunit)
                     for v in values:
-                        f_uzf.write("{:10d}".format(v))
-                    f_uzf.write("{}\n".format(comment))
+                        f_uzf.write(f"{v:10d}")
+                    f_uzf.write(f"{comment}\n")
                 else:
                     comment = " #IFTUNIT"
-                    f_uzf.write("{:10d}".format(iftunit))
-                    f_uzf.write("{}\n".format(comment))
+                    f_uzf.write(f"{iftunit:10d}")
+                    f_uzf.write(f"{comment}\n")
 
         def write_transient(name):
             invar, var = self.__dict__[name].get_kper_entry(n)
 
-            comment = " #{} for stress period ".format(name) + str(n + 1)
-            f_uzf.write("{0:10d}{1:20s}\n".format(invar, comment))
+            comment = f" #{name} for stress period {n + 1}"
+            f_uzf.write(f"{invar:10d}{comment:20s}\n")
             if invar >= 0:
                 f_uzf.write(var)
 
@@ -884,7 +803,11 @@ class ModflowUzf1(Package):
                 write_transient("extdp")
                 if self.iuzfopt > 0:
                     write_transient("extwc")
-            if self.capillaryuzet and "nwt" in self.parent.version:
+            if (
+                self.capillaryuzet
+                and "nwt" in self.parent.version
+                and self.iuzfopt > 0
+            ):
                 write_transient("air_entry")
                 write_transient("hroot")
                 write_transient("rootact")
@@ -924,7 +847,7 @@ class ModflowUzf1(Package):
 
         """
         if model.verbose:
-            sys.stdout.write("loading uzf package file...\n")
+            print("loading uzf package file...")
 
         openfile = not hasattr(f, "read")
         if openfile:
@@ -952,7 +875,7 @@ class ModflowUzf1(Package):
         options = None
         if model.version == "mfnwt" and "options" in line.lower():
             options = OptionBlock.load_options(f, ModflowUzf1)
-            line = f.readline()
+            line = multi_line_strip(f)
 
         else:
             query = (
@@ -971,7 +894,7 @@ class ModflowUzf1(Package):
                     options = OptionBlock(
                         line.lower().strip(), ModflowUzf1, block=False
                     )
-                    line = f.readline()
+                    line = multi_line_strip(f)
                     break
 
         if options is not None:
@@ -1014,7 +937,7 @@ class ModflowUzf1(Package):
         }
 
         def load_util2d(name, dtype, per=None):
-            print("   loading {} array...".format(name))
+            print(f"   loading {name} array...")
             if per is not None:
                 arrays[name][per] = Util2d.load(
                     f, model, (nrow, ncol), dtype, name, ext_unit_dict
@@ -1032,7 +955,7 @@ class ModflowUzf1(Package):
             load_util2d("irunbnd", np.int32)
 
         # dataset 4
-        if iuzfopt in [0, 1]:
+        if np.abs(iuzfopt) in [0, 1]:
             load_util2d("vks", np.float32)
 
         # dataset 4b
@@ -1068,7 +991,7 @@ class ModflowUzf1(Package):
 
         # dataset 9
         for per in range(nper):
-            print("stress period {}:".format(per + 1))
+            print(f"stress period {per + 1}:")
             line = line_parse(f.readline())
             nuzf1 = pop_item(line, int)
 
@@ -1090,13 +1013,14 @@ class ModflowUzf1(Package):
                     # dataset 14
                     load_util2d("extdp", np.float32, per=per)
                 # dataset 15
-                line = line_parse(f.readline())
-                nuzf4 = pop_item(line, int)
-                if nuzf4 >= 0:
-                    # dataset 16
-                    load_util2d("extwc", np.float32, per=per)
+                if iuzfopt > 0:
+                    line = line_parse(f.readline())
+                    nuzf4 = pop_item(line, int)
+                    if nuzf4 >= 0:
+                        # dataset 16
+                        load_util2d("extwc", np.float32, per=per)
 
-                if capillaryuzet:
+                if capillaryuzet and iuzfopt > 0:
                     # dataset 17
                     line = line_parse(f.readline())
                     nuzf5 = pop_item(line, int)
@@ -1173,7 +1097,7 @@ class ModflowUzf1(Package):
             unitnumber=unitnumber,
             filenames=filenames,
             options=options,
-            **arrays
+            **arrays,
         )
 
     @staticmethod

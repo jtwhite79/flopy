@@ -47,31 +47,35 @@ You can file new issues by filling out our [new issue form](https://github.com/m
 Before you submit your Pull Request (PR) consider the following guidelines:
 
 1. Search [GitHub](https://github.com/modflowpy/flopy/pulls) for an open or closed PR that relates to your submission. You don't want to duplicate effort.
-1. Fork the modflowpy/flopy repo.
-1. Make your changes in a new git branch:
+2. Fork the modflowpy/flopy repo.
+3. Make your changes in a new git branch:
 
      ```shell
      git checkout -b my-fix-branch develop
      ```
 
-1. Create your patch, **including appropriate test cases**.
-1. Run the [black formatter](https://github.com/psf/black) on Flopy source files from the git repository root directory using:
+4. Create your patch, **including appropriate test cases**. See [DEVELOPER,md](DEVELOPER.md#running-tests) for guidelines for constructing autotests.
+5. Run the formatting tools from the project root:
 
    ```shell
-   black -l 79 ./flopy
+   black -v flopy
+   isort -v flopy
    ```
-   Note: Pull Requests must pass black format checks run on the [GitHub actions](https://github.com/modflowpy/flopy/actions) (*linting*) before they will be accepted. The black formatter can be installed using [`pip`](https://pypi.org/project/black/) and [`conda`](https://anaconda.org/conda-forge/black). 
-   
-1. Run the full FloPy test suite and ensure that all tests pass:
+
+   Note: Pull Requests must pass format checks run on the [GitHub actions](https://github.com/modflowpy/flopy/actions) before they will be accepted. If the Pull Request fails the `lint` job in the [continuous integration](https://github.com/modflowpy/flopy/actions/workflows/commit.yml) workflow, make sure the latest versions of `black` and `isort` are installed (this may require clearing CI caches).
+
+6. Run the full FloPy test suite and ensure that all tests pass:
 
     ```shell
     cd autotest
-    nosetests -v get_exes.py
-    nosetests -v
+    pytest -v -n auto
     ```
-   Note: the FloPy test suite requires the [nosetests](https://pypi.org/project/nose/) and [pymake](https://github.com/modflowpy/pymake) python packages. All the FloPy dependencies must also be installed for the tests to pass.
 
-1. Commit your changes using a descriptive commit message that follows our
+   **Note**: the FloPy test suite requires the [pytest](https://pypi.org/project/pytest/) and [modflow-devtools](https://github.com/MODFLOW-USGS/modflow-devtools) python packages. Be sure to install all optional dependencies as described in the [developer docs](DEVELOPER.md), as tests will be skipped if optional dependencies are not found.
+
+    **Note:** you will either need to exclude notebooks when checking in your changeset or restore them after running the full test suite, to avoid including large volumes of execution metadata with your PR. See `DEVELOPER.md` for [instructions on how to automatically strip Notebook output from commits](https://github.com/modflowpy/flopy/blob/develop/DEVELOPER.md#editing-or-developing-example-notebooks).
+
+7. Commit your changes using a descriptive commit message that follows our
   [commit message conventions](#commit). Adherence to these conventions
   is necessary because release notes are automatically generated from these messages.
 
@@ -80,13 +84,13 @@ Before you submit your Pull Request (PR) consider the following guidelines:
      ```
    Note: the optional commit `-a` command line option will automatically "add" and "rm" edited files.
 
-1. Push your branch to GitHub:
+8. Push your branch to GitHub:
 
     ```shell
     git push origin my-fix-branch
     ```
 
-1. In GitHub, send a pull request to `flopy:develop`.
+9. In GitHub, send a pull request to `flopy:develop`.
 * If we suggest changes then:
   * Make the required updates.
   * Re-run the FloPy test suites, in the autotest directory, to ensure tests are still passing.
@@ -216,4 +220,4 @@ The footer should contain any information about **Breaking Changes** and is also
 
 [coc]: https://github.com/modflowpy/flopy/blob/develop/CODE_OF_CONDUCT.md
 [github]: https://github.com/modflowpy/flopy
-[stackoverflow]: http://stackoverflow.com/questions/tagged/flopy
+[stackoverflow]: https://stackoverflow.com/questions/tagged/flopy

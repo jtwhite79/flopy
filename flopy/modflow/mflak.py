@@ -4,14 +4,14 @@ the ModflowLak class as `flopy.modflow.ModflowLak`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/lak.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/lak.html>`_.
 
 """
-import sys
 import numpy as np
+
 from ..pakbase import Package
+from ..utils import Util3d, read_fixed_var, utils_def, write_fixed_var
 from ..utils.util_array import Transient3d
-from ..utils import Util3d, read_fixed_var, write_fixed_var
 
 
 class ModflowLak(Package):
@@ -28,13 +28,9 @@ class ModflowLak(Package):
         Sublakes of multiple-lake systems are considered separate lakes for
         input purposes. The variable NLAKES is used, with certain internal
         assumptions and approximations, to dimension arrays for the simulation.
-    ipakcb : int
-        (ILKCB in MODFLOW documentation)
-        Whether or not to write cell-by-cell flows (yes if ILKCB> 0, no
-        otherwise). If ILKCB< 0 and "Save Budget" is specified in the Output
-        Control or ICBCFL is not equal to 0, the cell-by-cell flows will be
-        printed in the standard output file. ICBCFL is specified in the input
-        to the Output Control Option of MODFLOW.
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     lwrt : int or list of ints (one per SP)
         lwrt > 0, suppresses printout from the lake package. Default is 0 (to
         print budget information)
@@ -228,9 +224,9 @@ class ModflowLak(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output names will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
@@ -279,12 +275,8 @@ class ModflowLak(Package):
         filenames=None,
         options=None,
         lwrt=0,
-        **kwargs
+        **kwargs,
     ):
-        """
-        Package constructor.
-
-        """
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowLak._defaultunit()
@@ -298,22 +290,10 @@ class ModflowLak(Package):
                     tabdata = True
                     nlen += nlakes
                     break
-        if filenames is None:
-            filenames = [None for x in range(nlen)]
-        elif isinstance(filenames, str):
-            filenames = [filenames] + [None for x in range(nlen - 1)]
-        elif isinstance(filenames, list):
-            if len(filenames) < nlen:
-                filenames = filenames + [None for x in range(2, nlen)]
+        filenames = self._prepare_filenames(filenames, nlen)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowLak._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
         # table input files
         if tabdata:
@@ -329,14 +309,14 @@ class ModflowLak(Package):
                     "{} tabfiles specified "
                     "instead of {} tabfiles".format(len(tab_files), nlakes)
                 )
+                # TODO: what should happen with msg?
             # make sure tab_files are not None
-            for idx, fname in enumerate(tab_files):
+            for idx, fname in enumerate(tab_files, 1):
                 if fname is None:
-                    msg = (
+                    raise ValueError(
                         "a filename must be specified for the "
-                        "tabfile for lake {}".format(idx + 1)
+                        f"tabfile for lake {idx}"
                     )
-                    raise ValueError(msg)
             # set unit for tab files if not passed to __init__
             if tab_units is None:
                 tab_units = []
@@ -346,37 +326,22 @@ class ModflowLak(Package):
             for iu, fname in zip(tab_units, tab_files):
                 model.add_external(fname, iu)
 
-        # Fill namefile items
-        name = [ModflowLak._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
-        self.heading = (
-            "# {} package for ".format(self.name[0])
-            + " {}, ".format(model.version_types[model.version])
-            + "generated by Flopy."
-        )
-        self.url = "lak.htm"
+        self._generate_heading()
+        self.url = "lak.html"
 
         if options is None:
             options = []
         self.options = options
         self.nlakes = nlakes
-        self.ipakcb = ipakcb
         self.theta = theta
         self.nssitr = nssitr
         self.sscncr = sscncr
@@ -391,9 +356,7 @@ class ModflowLak(Package):
         elif isinstance(stages, list):
             stages = np.array(stages)
         if stages.shape[0] != nlakes:
-            err = "stages shape should be ({}) but is only ({}).".format(
-                nlakes, stages.shape[0]
-            )
+            err = f"stages shape should be ({nlakes}) but is only ({stages.shape[0]})."
             raise Exception(err)
         self.stages = stages
         if stage_range is None:
@@ -405,10 +368,11 @@ class ModflowLak(Package):
                 stage_range = np.array(stage_range)
             elif isinstance(stage_range, float):
                 raise Exception(
-                    "stage_range should be a list or "
-                    "array of size ({}, 2)".format(nlakes)
+                    f"stage_range should be a list or array of size ({nlakes}, 2)"
                 )
-        if self.parent.dis.steady[0]:
+
+        self.dis = utils_def.get_dis(model)
+        if self.dis.steady[0]:
             if stage_range.shape != (nlakes, 2):
                 raise Exception(
                     "stages shape should be ({},2) but is only "
@@ -455,8 +419,7 @@ class ModflowLak(Package):
                     flux_data[key] = td
                     if len(list(flux_data.keys())) != nlakes:
                         raise Exception(
-                            "flux_data dictionary must "
-                            "have {} entries".format(nlakes)
+                            f"flux_data dictionary must have {nlakes} entries"
                         )
                 elif isinstance(value, float) or isinstance(value, int):
                     td = {}
@@ -465,7 +428,7 @@ class ModflowLak(Package):
                     flux_data[key] = td
                 elif isinstance(value, dict):
                     try:
-                        steady = self.parent.dis.steady[key]
+                        steady = self.dis.steady[key]
                     except:
                         steady = True
                     nlen = 4
@@ -511,15 +474,13 @@ class ModflowLak(Package):
         """
         f = open(self.fn_path, "w")
         # dataset 0
-        self.heading = "# {} package for ".format(
-            self.name[0]
-        ) + "{}, generated by Flopy.".format(self.parent.version)
-        f.write("{0}\n".format(self.heading))
+        if self.parent.version != "mf2k":
+            f.write(f"{self.heading}\n")
 
         # dataset 1a
         if len(self.options) > 0:
             for option in self.options:
-                f.write("{} ".format(option))
+                f.write(f"{option} ")
             f.write("\n")
 
         # dataset 1b
@@ -529,7 +490,7 @@ class ModflowLak(Package):
             )
         )
         # dataset 2
-        steady = np.any(self.parent.dis.steady.array)
+        steady = np.any(self.dis.steady.array)
         t = [self.theta]
         if self.theta < 0.0 or steady:
             t.append(self.nssitr)
@@ -539,7 +500,7 @@ class ModflowLak(Package):
         f.write(write_fixed_var(t, free=self.parent.free_format_input))
 
         # dataset 3
-        steady = self.parent.dis.steady[0]
+        steady = self.dis.steady[0]
         for n in range(self.nlakes):
             ipos = [10]
             t = [self.stages[n]]
@@ -561,7 +522,7 @@ class ModflowLak(Package):
             list(self.sill_data.keys()) if self.sill_data is not None else []
         )
         ds9_keys = list(self.flux_data.keys())
-        nper = self.parent.dis.steady.shape[0]
+        nper = self.dis.steady.shape[0]
         for kper in range(nper):
             itmp, file_entry_lakarr = self.lakarr.get_kper_entry(kper)
             ibd, file_entry_bdlknc = self.bdlknc.get_kper_entry(kper)
@@ -576,7 +537,7 @@ class ModflowLak(Package):
             else:
                 tmplwrt = self.lwrt
             t = [itmp, itmp2, tmplwrt]
-            comment = "Stress period {}".format(kper + 1)
+            comment = f"Stress period {kper + 1}"
             f.write(
                 write_fixed_var(
                     t, free=self.parent.free_format_input, comment=comment
@@ -621,7 +582,7 @@ class ModflowLak(Package):
                 ds9 = self.flux_data[kper]
                 for n in range(self.nlakes):
                     try:
-                        steady = self.parent.dis.steady[kper]
+                        steady = self.dis.steady[kper]
                     except:
                         steady = True
                     if kper > 0 and steady:
@@ -674,8 +635,10 @@ class ModflowLak(Package):
 
         """
 
+        cls.dis = utils_def.get_dis(model)
+
         if model.verbose:
-            sys.stdout.write("loading lak package file...\n")
+            print("loading lak package file...")
 
         openfile = not hasattr(f, "read")
         if openfile:
@@ -751,7 +714,7 @@ class ModflowLak(Package):
                 t = read_fixed_var(line, ipos=[10, 10, 10, 5])
             stages.append(t[0])
             ipos = 1
-            if model.dis.steady[0]:
+            if cls.dis.steady[0]:
                 stage_range.append((float(t[ipos]), float(t[ipos + 1])))
                 ipos += 2
             if tabdata:
@@ -766,8 +729,7 @@ class ModflowLak(Package):
         for iper in range(nper):
             if model.verbose:
                 print(
-                    "   reading lak dataset 4 - "
-                    "for stress period {}".format(iper + 1)
+                    f"   reading lak dataset 4 - for stress period {iper + 1}"
                 )
             line = f.readline().rstrip()
             if model.array_free_format:
@@ -780,19 +742,17 @@ class ModflowLak(Package):
             if itmp > 0:
                 if model.verbose:
                     print(
-                        "   reading lak dataset 5 - "
-                        "for stress period {}".format(iper + 1)
+                        f"   reading lak dataset 5 - for stress period {iper + 1}"
                     )
-                name = "LKARR_StressPeriod_{}".format(iper)
+                name = f"LKARR_StressPeriod_{iper}"
                 lakarr = Util3d.load(
                     f, model, (nlay, nrow, ncol), np.int32, name, ext_unit_dict
                 )
                 if model.verbose:
                     print(
-                        "   reading lak dataset 6 - "
-                        "for stress period {}".format(iper + 1)
+                        f"   reading lak dataset 6 - for stress period {iper + 1}"
                     )
-                name = "BDLKNC_StressPeriod_{}".format(iper)
+                name = f"BDLKNC_StressPeriod_{iper}"
                 bdlknc = Util3d.load(
                     f,
                     model,
@@ -807,8 +767,7 @@ class ModflowLak(Package):
 
                 if model.verbose:
                     print(
-                        "   reading lak dataset 7 - "
-                        "for stress period {}".format(iper + 1)
+                        f"   reading lak dataset 7 - for stress period {iper + 1}"
                     )
                 line = f.readline().rstrip()
                 t = line.split()
@@ -817,8 +776,7 @@ class ModflowLak(Package):
                 if nslms > 0:
                     if model.verbose:
                         print(
-                            "   reading lak dataset 8 - "
-                            "for stress period {}".format(iper + 1)
+                            f"   reading lak dataset 8 - for stress period {iper + 1}"
                         )
                     for i in range(nslms):
                         line = f.readline().rstrip()
@@ -844,8 +802,7 @@ class ModflowLak(Package):
             if itmp1 >= 0:
                 if model.verbose:
                     print(
-                        "   reading lak dataset 9 - "
-                        "for stress period {}".format(iper + 1)
+                        f"   reading lak dataset 9 - for stress period {iper + 1}"
                     )
                 ds9 = {}
                 for n in range(nlakes):
@@ -859,7 +816,7 @@ class ModflowLak(Package):
                     tds.append(float(t[1]))
                     tds.append(float(t[2]))
                     tds.append(float(t[3]))
-                    if model.dis.steady[iper]:
+                    if cls.dis.steady[iper]:
                         if iper == 0:
                             tds.append(stage_range[n][0])
                             tds.append(stage_range[n][1])

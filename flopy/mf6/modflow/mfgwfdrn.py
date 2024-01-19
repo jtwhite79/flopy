@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfdrn(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -44,7 +44,8 @@ class ModflowGwfdrn(mfpackage.MFPackage):
           the elevation when the conductance (COND) scaling factor is 1. A
           linear- or cubic-scaling is used to scale the drain conductance
           (COND) when the Standard or Newton-Raphson Formulation is used,
-          respectively.
+          respectively. This discharge scaling option is described in more
+          detail in Chapter 3 of the Supplemental Technical Information.
     boundnames : boolean
         * boundnames (boolean) keyword to indicate that boundary names may be
           provided with the list of drain cells.
@@ -139,6 +140,7 @@ class ModflowGwfdrn(mfpackage.MFPackage):
     dfn_file_name = "gwf-drn.dfn"
 
     dfn = [
+        ["header", "multi-package", "package-type stress-package"],
         [
             "block options",
             "name auxiliary",
@@ -370,10 +372,10 @@ class ModflowGwfdrn(mfpackage.MFPackage):
         stress_period_data=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "drn", filename, pname, loading_package, parent_file
+            model, "drn", filename, pname, loading_package, **kwargs
         )
 
         # set up variables

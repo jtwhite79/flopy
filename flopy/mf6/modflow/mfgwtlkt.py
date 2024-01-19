@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwtlkt(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -42,7 +42,7 @@ class ModflowGwtlkt(mfpackage.MFPackage):
           specified with this name. Note that the flow package must have an
           auxiliary variable with this name or the program will terminate with
           an error. If the flows for this advanced transport package are read
-          from a file, then this option will have no affect.
+          from a file, then this option will have no effect.
     boundnames : boolean
         * boundnames (boolean) keyword to indicate that boundary names may be
           provided with the list of lake cells.
@@ -53,10 +53,10 @@ class ModflowGwtlkt(mfpackage.MFPackage):
     print_concentration : boolean
         * print_concentration (boolean) keyword to indicate that the list of
           lake concentration will be printed to the listing file for every
-          stress period in which "HEAD PRINT" is specified in Output Control.
-          If there is no Output Control option and PRINT_CONCENTRATION is
-          specified, then concentration are printed for the last time step of
-          each stress period.
+          stress period in which "CONCENTRATION PRINT" is specified in Output
+          Control. If there is no Output Control option and PRINT_CONCENTRATION
+          is specified, then concentration are printed for the last time step
+          of each stress period.
     print_flows : boolean
         * print_flows (boolean) keyword to indicate that the list of lake flow
           rates will be printed to the listing file for every stress period
@@ -74,6 +74,10 @@ class ModflowGwtlkt(mfpackage.MFPackage):
     budget_filerecord : [budgetfile]
         * budgetfile (string) name of the binary output file to write budget
           information.
+    budgetcsv_filerecord : [budgetcsvfile]
+        * budgetcsvfile (string) name of the comma-separated value (CSV) output
+          file to write budget summary information. A budget summary record
+          will be written to this file for each time step of the simulation.
     timeseries : {varname:data} or timeseries data
         * Contains data for the ts package. Data can be stored in a dictionary
           containing data for the ts package with variable names as keys and
@@ -84,10 +88,10 @@ class ModflowGwtlkt(mfpackage.MFPackage):
           containing data for the obs package with variable names as keys and
           package data as values. Data just for the observations variable is
           also acceptable. See obs package documentation for more information.
-    packagedata : [lakeno, strt, aux, boundname]
-        * lakeno (integer) integer value that defines the lake number
-          associated with the specified PACKAGEDATA data on the line. LAKENO
-          must be greater than zero and less than or equal to NLAKES. Lake
+    packagedata : [ifno, strt, aux, boundname]
+        * ifno (integer) integer value that defines the feature (lake) number
+          associated with the specified PACKAGEDATA data on the line. IFNO must
+          be greater than zero and less than or equal to NLAKES. Lake
           information must be specified for every lake or the program will
           terminate with an error. The program will also terminate with an
           error if information for a lake is specified more than once. This
@@ -109,9 +113,9 @@ class ModflowGwtlkt(mfpackage.MFPackage):
           character variable that can contain as many as 40 characters. If
           BOUNDNAME contains spaces in it, then the entire name must be
           enclosed within single quotes.
-    lakeperioddata : [lakeno, laksetting]
-        * lakeno (integer) integer value that defines the lake number
-          associated with the specified PERIOD data on the line. LAKENO must be
+    lakeperioddata : [ifno, laksetting]
+        * ifno (integer) integer value that defines the feature (lake) number
+          associated with the specified PERIOD data on the line. IFNO must be
           greater than zero and less than or equal to NLAKES. This argument is
           an index variable, which means that it should be treated as zero-
           based when working with FloPy and Python. Flopy will automatically
@@ -204,6 +208,9 @@ class ModflowGwtlkt(mfpackage.MFPackage):
     budget_filerecord = ListTemplateGenerator(
         ("gwt6", "lkt", "options", "budget_filerecord")
     )
+    budgetcsv_filerecord = ListTemplateGenerator(
+        ("gwt6", "lkt", "options", "budgetcsv_filerecord")
+    )
     ts_filerecord = ListTemplateGenerator(
         ("gwt6", "lkt", "options", "ts_filerecord")
     )
@@ -221,6 +228,10 @@ class ModflowGwtlkt(mfpackage.MFPackage):
     dfn_file_name = "gwt-lkt.dfn"
 
     dfn = [
+        [
+            "header",
+            "multi-package",
+        ],
         [
             "block options",
             "name flow_package_name",
@@ -353,6 +364,36 @@ class ModflowGwtlkt(mfpackage.MFPackage):
         ],
         [
             "block options",
+            "name budgetcsv_filerecord",
+            "type record budgetcsv fileout budgetcsvfile",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name budgetcsv",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name budgetcsvfile",
+            "type string",
+            "preserve_case true",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged false",
+            "optional false",
+        ],
+        [
+            "block options",
             "name ts_filerecord",
             "type record ts6 filein ts6_filename",
             "shape",
@@ -428,13 +469,13 @@ class ModflowGwtlkt(mfpackage.MFPackage):
         [
             "block packagedata",
             "name packagedata",
-            "type recarray lakeno strt aux boundname",
+            "type recarray ifno strt aux boundname",
             "shape (maxbound)",
             "reader urword",
         ],
         [
             "block packagedata",
-            "name lakeno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -487,13 +528,13 @@ class ModflowGwtlkt(mfpackage.MFPackage):
         [
             "block period",
             "name lakeperioddata",
-            "type recarray lakeno laksetting",
+            "type recarray ifno laksetting",
             "shape",
             "reader urword",
         ],
         [
             "block period",
-            "name lakeno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -622,16 +663,17 @@ class ModflowGwtlkt(mfpackage.MFPackage):
         save_flows=None,
         concentration_filerecord=None,
         budget_filerecord=None,
+        budgetcsv_filerecord=None,
         timeseries=None,
         observations=None,
         packagedata=None,
         lakeperioddata=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "lkt", filename, pname, loading_package, parent_file
+            model, "lkt", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -654,6 +696,9 @@ class ModflowGwtlkt(mfpackage.MFPackage):
         )
         self.budget_filerecord = self.build_mfdata(
             "budget_filerecord", budget_filerecord
+        )
+        self.budgetcsv_filerecord = self.build_mfdata(
+            "budgetcsv_filerecord", budgetcsv_filerecord
         )
         self._ts_filerecord = self.build_mfdata("ts_filerecord", None)
         self._ts_package = self.build_child_package(

@@ -1,10 +1,8 @@
-from flopy.utils.flopy_io import get_url_text
 import numpy as np
+import pandas as pd
 
-try:
-    import pandas as pd
-except:
-    pd = False
+from ..utils import import_optional_dependency
+from ..utils.flopy_io import get_url_text
 
 
 class acdd:
@@ -25,8 +23,8 @@ class acdd:
     ----------
 
     https://www.sciencebase.gov/catalog/
-    http://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#description-of-file-contents
-    http://wiki.esipfed.org/index.php/Attribute_Convention_for_Data_Discovery
+    https://cfconventions.org/cf-conventions/v1.6.0/cf-conventions.html#description-of-file-contents
+    https://wiki.esipfed.org/Attribute_Convention_for_Data_Discovery
 
     """
 
@@ -40,9 +38,7 @@ class acdd:
         self.model_grid = model.modelgrid
         self.model_time = model.modeltime
         self.sciencebase_url = (
-            "https://www.sciencebase.gov/catalog/item/{}".format(
-                sciencebase_id
-            )
+            f"https://www.sciencebase.gov/catalog/item/{sciencebase_id}"
         )
         self.sb = self.get_sciencebase_metadata(sciencebase_id)
         if self.sb is None:
@@ -61,7 +57,7 @@ class acdd:
             self.__dict__[k] = self.sb.get(k, None)
 
         # highly recommended global attributes
-        # http://wiki.esipfed.org/index.php/Attribute_Convention_for_Data_Discovery
+        # https://wiki.esipfed.org/Attribute_Convention_for_Data_Discovery
         self.keywords = [t["name"] for t in self.sb["tags"]]
 
         # recommended global attributes
@@ -140,7 +136,7 @@ class acdd:
     @property
     def creator_url(self):
         urlname = "-".join(self.creator.get("name").replace(".", "").split())
-        url = "https://www.usgs.gov/staff-profiles/" + urlname.lower()
+        url = f"https://www.usgs.gov/staff-profiles/{urlname.lower()}"
         # check if it exists
         txt = get_url_text(url)
         if txt is not None:
@@ -196,19 +192,20 @@ class acdd:
         -------
 
         """
+
         l = self.sb["dates"]
         tc = {}
         for t in ["start", "end"]:
             tc[t] = [d.get("dateString") for d in l if t in d["type"].lower()][
                 0
             ]
-        if not np.all(self.model_time.steady_state) and pd:
+        if not np.all(self.model_time.steady_state) and pd is not None:
             # replace with times from model reference
             tc["start"] = self.model_time.start_datetime
             strt = pd.Timestamp(self.model_time.start_datetime)
             mlen = self.model_time.perlen.sum()
             tunits = self.model_time.time_units
-            tc["duration"] = "{} {}".format(mlen, tunits)
+            tc["duration"] = f"{mlen} {tunits}"
             end = strt + pd.Timedelta(mlen, unit="d")
             tc["end"] = str(end)
         return tc
@@ -262,7 +259,6 @@ class acdd:
         url = urlbase.format(id)
 
         import json
-        from flopy.utils.flopy_io import get_url_text
 
         msg = "Need an internet connection to get metadata from ScienceBase."
         text = get_url_text(url, error_msg=msg)
@@ -285,11 +281,8 @@ class acdd:
         metadata : dict
             Dictionary of metadata
         """
-        try:
-            # use defusedxml to removed XML security vulnerabilities
-            import defusedxml.ElementTree as ET
-        except ImportError:
-            raise ImportError("DefusedXML must be installed to query metadata")
+        # use defusedxml to removed XML security vulnerabilities
+        ET = import_optional_dependency("defusedxml.ElementTree")
 
         url = self.xmlfile
         msg = "Need an internet connection to get metadata from ScienceBase."

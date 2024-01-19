@@ -1,4 +1,5 @@
 # --------------------- gwt mwt options ---------------------
+# flopy multi-package
 
 block options
 name flow_package_name
@@ -25,7 +26,7 @@ shape
 reader urword
 optional true
 longname keyword to specify name of concentration auxiliary variable in flow package
-description keyword to specify the name of an auxiliary variable in the corresponding flow package.  If specified, then the simulated concentrations from this advanced transport package will be copied into the auxiliary variable specified with this name.  Note that the flow package must have an auxiliary variable with this name or the program will terminate with an error.  If the flows for this advanced transport package are read from a file, then this option will have no affect.
+description keyword to specify the name of an auxiliary variable in the corresponding flow package.  If specified, then the simulated concentrations from this advanced transport package will be copied into the auxiliary variable specified with this name.  Note that the flow package must have an auxiliary variable with this name or the program will terminate with an error.  If the flows for this advanced transport package are read from a file, then this option will have no effect.
 
 block options
 name boundnames
@@ -50,7 +51,7 @@ type keyword
 reader urword
 optional true
 longname print calculated concentrations to listing file
-description REPLACE print_head {'{#1}': 'well', '{#2}': 'concentration', '{#3}': 'CONCENTRATION'}
+description REPLACE print_concentration {'{#1}': 'well', '{#2}': 'concentration', '{#3}': 'CONCENTRATION'}
 
 block options
 name print_flows
@@ -146,6 +147,39 @@ longname file keyword
 description name of the binary output file to write budget information.
 
 block options
+name budgetcsv_filerecord
+type record budgetcsv fileout budgetcsvfile
+shape
+reader urword
+tagged true
+optional true
+longname
+description
+
+block options
+name budgetcsv
+type keyword
+shape
+in_record true
+reader urword
+tagged true
+optional false
+longname budget keyword
+description keyword to specify that record corresponds to the budget CSV.
+
+block options
+name budgetcsvfile
+type string
+preserve_case true
+shape
+in_record true
+reader urword
+tagged false
+optional false
+longname file keyword
+description name of the comma-separated value (CSV) output file to write budget summary information.  A budget summary record will be written to this file for each time step of the simulation.
+
+block options
 name ts_filerecord
 type record ts6 filein ts6_filename
 shape
@@ -225,21 +259,21 @@ description REPLACE obs6_filename {'{#1}': 'MWT'}
 
 block packagedata
 name packagedata
-type recarray mawno strt aux boundname
+type recarray ifno strt aux boundname
 shape (maxbound)
 reader urword
 longname
 description
 
 block packagedata
-name mawno
+name ifno
 type integer
 shape
 tagged false
 in_record true
 reader urword
 longname well number for this entry
-description integer value that defines the well number associated with the specified PACKAGEDATA data on the line. MAWNO must be greater than zero and less than or equal to NMAWWELLS. Well information must be specified for every well or the program will terminate with an error.  The program will also terminate with an error if information for a well is specified more than once.
+description integer value that defines the feature (well) number associated with the specified PACKAGEDATA data on the line. IFNO must be greater than zero and less than or equal to NMAWWELLS. Well information must be specified for every well or the program will terminate with an error.  The program will also terminate with an error if information for a well is specified more than once.
 numeric_index true
 
 block packagedata
@@ -293,21 +327,21 @@ description REPLACE iper {}
 
 block period
 name mwtperioddata
-type recarray mawno mwtsetting
+type recarray ifno mwtsetting
 shape
 reader urword
 longname
 description
 
 block period
-name mawno
+name ifno
 type integer
 shape
 tagged false
 in_record true
 reader urword
 longname well number for this entry
-description integer value that defines the well number associated with the specified PERIOD data on the line. MAWNO must be greater than zero and less than or equal to NMAWWELLS.
+description integer value that defines the feature (well) number associated with the specified PERIOD data on the line. IFNO must be greater than zero and less than or equal to NMAWWELLS.
 numeric_index true
 
 block period
@@ -318,7 +352,7 @@ tagged false
 in_record true
 reader urword
 longname
-description line of information that is parsed into a keyword and values.  Keyword values that can be used to start the MWTSETTING string include: STATUS, CONCENTRATION, RAINFALL, EVAPORATION, RUNOFF, and AUXILIARY.  These settings are used to assign the concentration of associated with the corresponding flow terms.  Concentrations cannot be specified for all flow terms.  For example, the Multi-Aquifer Well Package supports a ``WITHDRAWAL'' flow term.  If this withdrawal term is active, then water will be withdrawn from the well at the calculated concentration of the well.
+description line of information that is parsed into a keyword and values.  Keyword values that can be used to start the MWTSETTING string include: STATUS, CONCENTRATION, RAINFALL, EVAPORATION, RUNOFF, and AUXILIARY.  These settings are used to assign the concentration associated with the corresponding flow terms.  Concentrations cannot be specified for all flow terms.  For example, the Multi-Aquifer Well Package supports a ``WITHDRAWAL'' flow term.  If this withdrawal term is active, then water will be withdrawn from the well at the calculated concentration of the well.
 
 block period
 name status

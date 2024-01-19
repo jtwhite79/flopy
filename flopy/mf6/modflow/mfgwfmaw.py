@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on March 19, 2021 03:08:37 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfmaw(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -59,6 +59,10 @@ class ModflowGwfmaw(mfpackage.MFPackage):
     budget_filerecord : [budgetfile]
         * budgetfile (string) name of the binary output file to write budget
           information.
+    budgetcsv_filerecord : [budgetcsvfile]
+        * budgetcsvfile (string) name of the comma-separated value (CSV) output
+          file to write budget summary information. A budget summary record
+          will be written to this file for each time step of the simulation.
     no_well_storage : boolean
         * no_well_storage (boolean) keyword that deactivates inclusion of well
           storage contributions to the multi-aquifer well package continuity
@@ -98,6 +102,11 @@ class ModflowGwfmaw(mfpackage.MFPackage):
           compatibility with previous versions of MODFLOW but use of the
           RATE_SCALING option instead of the HEAD_LIMIT option is recommended.
           By default, SHUTDOWN_KAPPA is 0.0001.
+    mfrcsv_filerecord : [mfrcsvfile]
+        * mfrcsvfile (string) name of the comma-separated value (CSV) output
+          file to write information about multi-aquifer well extraction or
+          injection rates that have been reduced by the program. Entries are
+          only written if the extraction or injection rates are reduced.
     timeseries : {varname:data} or timeseries data
         * Contains data for the ts package. Data can be stored in a dictionary
           containing data for the ts package with variable names as keys and
@@ -116,11 +125,11 @@ class ModflowGwfmaw(mfpackage.MFPackage):
     nmawwells : integer
         * nmawwells (integer) integer value specifying the number of multi-
           aquifer wells that will be simulated for all stress periods.
-    packagedata : [wellno, radius, bottom, strt, condeqn, ngwfnodes, aux,
+    packagedata : [ifno, radius, bottom, strt, condeqn, ngwfnodes, aux,
       boundname]
-        * wellno (integer) integer value that defines the well number
-          associated with the specified PACKAGEDATA data on the line. WELLNO
-          must be greater than zero and less than or equal to NMAWWELLS. Multi-
+        * ifno (integer) integer value that defines the feature (well) number
+          associated with the specified PACKAGEDATA data on the line. IFNO must
+          be greater than zero and less than or equal to NMAWWELLS. Multi-
           aquifer well information must be specified for every multi-aquifer
           well or the program will terminate with an error. The program will
           also terminate with an error if information for a multi-aquifer well
@@ -167,8 +176,8 @@ class ModflowGwfmaw(mfpackage.MFPackage):
           error condition occurs, it is suggested that the THEIM or MEAN
           conductance equations be used for these multi-aquifer wells.
         * ngwfnodes (integer) integer value that defines the number of GWF
-          nodes connected to this (WELLNO) multi-aquifer well. NGWFNODES must
-          be greater than zero.
+          nodes connected to this (IFNO) multi-aquifer well. NGWFNODES must be
+          greater than zero.
         * aux (double) represents the values of the auxiliary variables for
           each multi-aquifer well. The values of auxiliary variables must be
           present for each multi-aquifer well. The values must be specified in
@@ -181,10 +190,10 @@ class ModflowGwfmaw(mfpackage.MFPackage):
           an ASCII character variable that can contain as many as 40
           characters. If BOUNDNAME contains spaces in it, then the entire name
           must be enclosed within single quotes.
-    connectiondata : [wellno, icon, cellid, scrn_top, scrn_bot, hk_skin,
+    connectiondata : [ifno, icon, cellid, scrn_top, scrn_bot, hk_skin,
       radius_skin]
-        * wellno (integer) integer value that defines the well number
-          associated with the specified CONNECTIONDATA data on the line. WELLNO
+        * ifno (integer) integer value that defines the feature (well) number
+          associated with the specified CONNECTIONDATA data on the line. IFNO
           must be greater than zero and less than or equal to NMAWWELLS. Multi-
           aquifer well connection information must be specified for every
           multi-aquifer well connection to the GWF model (NGWFNODES) or the
@@ -198,10 +207,10 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         * icon (integer) integer value that defines the GWF connection number
           for this multi-aquifer well connection entry. ICONN must be greater
           than zero and less than or equal to NGWFNODES for multi-aquifer well
-          WELLNO. This argument is an index variable, which means that it
-          should be treated as zero-based when working with FloPy and Python.
-          Flopy will automatically subtract one when loading index variables
-          and add one when writing index variables.
+          IFNO. This argument is an index variable, which means that it should
+          be treated as zero-based when working with FloPy and Python. Flopy
+          will automatically subtract one when loading index variables and add
+          one when writing index variables.
         * cellid ((integer, ...)) is the cell identifier, and depends on the
           type of grid that is used for the simulation. For a structured grid
           that uses the DIS input file, CELLID is the layer, row, and column.
@@ -250,14 +259,14 @@ class ModflowGwfmaw(mfpackage.MFPackage):
           if CONDEQN is SPECIFIED or THIEM. If CONDEQN is SKIN, CUMULATIVE, or
           MEAN, the program will terminate with an error if RADIUS_SKIN is less
           than or equal to the RADIUS for the multi-aquifer well.
-    perioddata : [wellno, mawsetting]
-        * wellno (integer) integer value that defines the well number
-          associated with the specified PERIOD data on the line. WELLNO must be
-          greater than zero and less than or equal to NMAWWELLS. This argument
-          is an index variable, which means that it should be treated as zero-
-          based when working with FloPy and Python. Flopy will automatically
-          subtract one when loading index variables and add one when writing
-          index variables.
+    perioddata : [ifno, mawsetting]
+        * ifno (integer) integer value that defines the well number associated
+          with the specified PERIOD data on the line. IFNO must be greater than
+          zero and less than or equal to NMAWWELLS. This argument is an index
+          variable, which means that it should be treated as zero-based when
+          working with FloPy and Python. Flopy will automatically subtract one
+          when loading index variables and add one when writing index
+          variables.
         * mawsetting (keystring) line of information that is parsed into a
           keyword and values. Keyword values that can be used to start the
           MAWSETTING string include: STATUS, FLOWING_WELL, RATE, WELL_HEAD,
@@ -282,12 +291,12 @@ class ModflowGwfmaw(mfpackage.MFPackage):
                 * rate (double) is the volumetric pumping rate for the multi-
                   aquifer well. A positive value indicates recharge and a
                   negative value indicates discharge (pumping). RATE only
-                  applies to active (IBOUND > 0) multi-aquifer wells. If the
-                  Options block includes a TIMESERIESFILE entry (see the "Time-
-                  Variable Input" section), values can be obtained from a time
-                  series by entering the time-series name in place of a numeric
-                  value. By default, the RATE for each multi-aquifer well is
-                  zero.
+                  applies to active (STATUS is ACTIVE) multi-aquifer wells. If
+                  the Options block includes a TIMESERIESFILE entry (see the
+                  "Time-Variable Input" section), values can be obtained from a
+                  time series by entering the time-series name in place of a
+                  numeric value. By default, the RATE for each multi-aquifer
+                  well is zero.
             well_head : [double]
                 * well_head (double) is the head in the multi-aquifer well.
                   WELL_HEAD is only applied to constant head (STATUS is
@@ -362,6 +371,12 @@ class ModflowGwfmaw(mfpackage.MFPackage):
     budget_filerecord = ListTemplateGenerator(
         ("gwf6", "maw", "options", "budget_filerecord")
     )
+    budgetcsv_filerecord = ListTemplateGenerator(
+        ("gwf6", "maw", "options", "budgetcsv_filerecord")
+    )
+    mfrcsv_filerecord = ListTemplateGenerator(
+        ("gwf6", "maw", "options", "mfrcsv_filerecord")
+    )
     ts_filerecord = ListTemplateGenerator(
         ("gwf6", "maw", "options", "ts_filerecord")
     )
@@ -380,6 +395,7 @@ class ModflowGwfmaw(mfpackage.MFPackage):
     dfn_file_name = "gwf-maw.dfn"
 
     dfn = [
+        ["header", "multi-package", "package-type advanced-stress-package"],
         [
             "block options",
             "name auxiliary",
@@ -496,6 +512,36 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         ],
         [
             "block options",
+            "name budgetcsv_filerecord",
+            "type record budgetcsv fileout budgetcsvfile",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name budgetcsv",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name budgetcsvfile",
+            "type string",
+            "preserve_case true",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged false",
+            "optional false",
+        ],
+        [
+            "block options",
             "name no_well_storage",
             "type keyword",
             "reader urword",
@@ -528,6 +574,36 @@ class ModflowGwfmaw(mfpackage.MFPackage):
             "type double precision",
             "reader urword",
             "optional true",
+        ],
+        [
+            "block options",
+            "name mfrcsv_filerecord",
+            "type record maw_flow_reduce_csv fileout mfrcsvfile",
+            "shape",
+            "reader urword",
+            "tagged true",
+            "optional true",
+        ],
+        [
+            "block options",
+            "name maw_flow_reduce_csv",
+            "type keyword",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged true",
+            "optional false",
+        ],
+        [
+            "block options",
+            "name mfrcsvfile",
+            "type string",
+            "preserve_case true",
+            "shape",
+            "in_record true",
+            "reader urword",
+            "tagged false",
+            "optional false",
         ],
         [
             "block options",
@@ -621,14 +697,14 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         [
             "block packagedata",
             "name packagedata",
-            "type recarray wellno radius bottom strt condeqn ngwfnodes aux "
+            "type recarray ifno radius bottom strt condeqn ngwfnodes aux "
             "boundname",
             "shape (nmawwells)",
             "reader urword",
         ],
         [
             "block packagedata",
-            "name wellno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -705,13 +781,13 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         [
             "block connectiondata",
             "name connectiondata",
-            "type recarray wellno icon cellid scrn_top scrn_bot hk_skin "
+            "type recarray ifno icon cellid scrn_top scrn_bot hk_skin "
             "radius_skin",
             "reader urword",
         ],
         [
             "block connectiondata",
-            "name wellno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -789,13 +865,13 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         [
             "block period",
             "name perioddata",
-            "type recarray wellno mawsetting",
+            "type recarray ifno mawsetting",
             "shape",
             "reader urword",
         ],
         [
             "block period",
-            "name wellno",
+            "name ifno",
             "type integer",
             "shape",
             "tagged false",
@@ -1015,11 +1091,13 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         save_flows=None,
         head_filerecord=None,
         budget_filerecord=None,
+        budgetcsv_filerecord=None,
         no_well_storage=None,
         flow_correction=None,
         flowing_wells=None,
         shutdown_theta=None,
         shutdown_kappa=None,
+        mfrcsv_filerecord=None,
         timeseries=None,
         observations=None,
         mover=None,
@@ -1029,10 +1107,10 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         perioddata=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "maw", filename, pname, loading_package, parent_file
+            model, "maw", filename, pname, loading_package, **kwargs
         )
 
         # set up variables
@@ -1048,6 +1126,9 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         self.budget_filerecord = self.build_mfdata(
             "budget_filerecord", budget_filerecord
         )
+        self.budgetcsv_filerecord = self.build_mfdata(
+            "budgetcsv_filerecord", budgetcsv_filerecord
+        )
         self.no_well_storage = self.build_mfdata(
             "no_well_storage", no_well_storage
         )
@@ -1060,6 +1141,9 @@ class ModflowGwfmaw(mfpackage.MFPackage):
         )
         self.shutdown_kappa = self.build_mfdata(
             "shutdown_kappa", shutdown_kappa
+        )
+        self.mfrcsv_filerecord = self.build_mfdata(
+            "mfrcsv_filerecord", mfrcsv_filerecord
         )
         self._ts_filerecord = self.build_mfdata("ts_filerecord", None)
         self._ts_package = self.build_child_package(

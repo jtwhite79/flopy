@@ -4,18 +4,15 @@ the ModflowWel class as `flopy.modflow.ModflowWel`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?wel.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/wel.html>`_.
 
 """
-
-import sys
 import numpy as np
-from ..utils import MfList
+
 from ..pakbase import Package
-from ..utils.recarray_utils import create_empty_recarray
+from ..utils import MfList
 from ..utils.optionblock import OptionBlock
-from collections import OrderedDict
-import warnings
+from ..utils.recarray_utils import create_empty_recarray
 
 
 class ModflowWel(Package):
@@ -27,12 +24,10 @@ class ModflowWel(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.mf.Modflow`) to which
         this package will be added.
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is 0).
-    stress_period_data : list of boundaries, or recarray of boundaries, or
-        dictionary of boundaries
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
+    stress_period_data : list, recarray, dataframe or dictionary of boundaries.
         Each well is defined through definition of
         layer (int), row (int), column (int), flux (float).
         The simplest form is a dictionary with a lists of boundaries for each
@@ -77,12 +72,15 @@ class ModflowWel(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output names will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
+    add_package : bool
+        Flag to add the initialised package object to the parent model object.
+        Default is True.
 
     Attributes
     ----------
@@ -111,7 +109,7 @@ class ModflowWel(Package):
 
     """
 
-    _options = OrderedDict(
+    _options = dict(
         [
             (
                 "specify",
@@ -119,12 +117,12 @@ class ModflowWel(Package):
                     OptionBlock.dtype: np.bool_,
                     OptionBlock.nested: True,
                     OptionBlock.n_nested: 2,
-                    OptionBlock.vars: OrderedDict(
+                    OptionBlock.vars: dict(
                         [
                             ("phiramp", OptionBlock.simple_float),
                             (
                                 "iunitramp",
-                                OrderedDict(
+                                dict(
                                     [
                                         (OptionBlock.dtype, int),
                                         (OptionBlock.nested, False),
@@ -151,61 +149,29 @@ class ModflowWel(Package):
         binary=False,
         unitnumber=None,
         filenames=None,
+        add_package=True,
     ):
-        """
-        Package constructor.
-
-        """
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowWel._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowWel._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
-        # Fill namefile items
-        name = [ModflowWel._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
-        self.heading = (
-            "# {} package for ".format(self.name[0])
-            + " {}, ".format(model.version_types[model.version])
-            + "generated by Flopy."
-        )
-        self.url = "wel.htm"
-
-        self.ipakcb = ipakcb
+        self._generate_heading()
+        self.url = "wel.html"
         self.np = 0
 
         if options is None:
@@ -252,7 +218,7 @@ class ModflowWel(Package):
                         ladd = False
                         break
                 if ladd:
-                    options.append("aux {} ".format(name))
+                    options.append(f"aux {name} ")
 
         if isinstance(self.options, OptionBlock):
             if not self.options.auxillary:
@@ -265,33 +231,8 @@ class ModflowWel(Package):
             self, stress_period_data, binary=binary
         )
 
-        self.parent.add_package(self)
-
-    @property
-    def phiramp_unit(self):
-        """Get phiramp unit
-
-        Returns
-        -------
-        iunitramp: int
-            unit number of phiramp file
-
-        """
-        warnings.warn(
-            "phiramp_unit will be replaced with iunitramp for consistency",
-            DeprecationWarning,
-        )
-        return self.iunitramp
-
-    @phiramp_unit.setter
-    def phiramp_unit(self, phiramp_unit):
-        """Set phiramp unit
-
-        Returns
-        -------
-
-        """
-        self.iunitramp = phiramp_unit
+        if add_package:
+            self.parent.add_package(self)
 
     def _ncells(self):
         """Maximum number of cells that have wells (developed for
@@ -325,20 +266,17 @@ class ModflowWel(Package):
         else:
             f_wel = open(self.fn_path, "w")
 
-        f_wel.write("%s\n" % self.heading)
+        f_wel.write(f"{self.heading}\n")
 
         if (
             isinstance(self.options, OptionBlock)
             and self.parent.version == "mfnwt"
         ):
-
             self.options.update_from_package(self)
             if self.options.block:
                 self.options.write_options(f_wel)
 
-        line = " {0:9d} {1:9d} ".format(
-            self.stress_period_data.mxact, self.ipakcb
-        )
+        line = f" {self.stress_period_data.mxact:9d} {self.ipakcb:9d} "
 
         if isinstance(self.options, OptionBlock):
             if self.options.noprint:
@@ -367,9 +305,7 @@ class ModflowWel(Package):
         else:
             if self.specify and self.parent.version == "mfnwt":
                 f_wel.write(
-                    "SPECIFY {0:10.5g} {1:10d}\n".format(
-                        self.phiramp, self.iunitramp
-                    )
+                    f"SPECIFY {self.phiramp:10.5g} {self.iunitramp:10d}\n"
                 )
 
         self.stress_period_data.write_transient(f_wel)
@@ -379,7 +315,7 @@ class ModflowWel(Package):
         try:
             self.stress_period_data.add_record(kper, index, values)
         except Exception as e:
-            raise Exception("mfwel error adding record to list: " + str(e))
+            raise Exception(f"mfwel error adding record to list: {e!s}")
 
     @staticmethod
     def get_default_dtype(structured=True):
@@ -445,7 +381,7 @@ class ModflowWel(Package):
         """
 
         if model.verbose:
-            sys.stdout.write("loading wel package file...\n")
+            print("loading wel package file...")
 
         return Package.load(
             f,
