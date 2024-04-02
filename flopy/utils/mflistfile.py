@@ -706,7 +706,7 @@ class ListBudget:
         for entry in self.entries:
             incdict[entry] = []
             cumdict[entry] = []
-            null_entries[entry] = np.NaN
+            null_entries[entry] = np.nan
         self.null_entries = [null_entries, null_entries]
         return incdict, cumdict
 
@@ -885,7 +885,7 @@ class ListBudget:
                     "end of file found while seeking budget "
                     "information for ts,sp: {} {}".format(ts, sp)
                 )
-                return np.NaN, np.NaN, np.NaN
+                return np.nan, np.nan, np.nan
             elif (
                 ihead == 2
                 and "SECONDS     MINUTES      HOURS       DAYS        YEARS"
@@ -904,22 +904,22 @@ class ListBudget:
             line = self.f.readline()
             if translen is None:
                 print("error parsing translen for ts,sp", ts, sp)
-                return np.NaN, np.NaN, np.NaN
+                return np.nan, np.nan, np.nan
 
         tslen = self._parse_time_line(line)
         if tslen is None:
             print("error parsing tslen for ts,sp", ts, sp)
-            return np.NaN, np.NaN, np.NaN
+            return np.nan, np.nan, np.nan
 
         sptim = self._parse_time_line(self.f.readline())
         if sptim is None:
             print("error parsing sptim for ts,sp", ts, sp)
-            return np.NaN, np.NaN, np.NaN
+            return np.nan, np.nan, np.nan
 
         totim = self._parse_time_line(self.f.readline())
         if totim is None:
             print("error parsing totim for ts,sp", ts, sp)
-            return np.NaN, np.NaN, np.NaN
+            return np.nan, np.nan, np.nan
         return tslen, sptim, totim
 
     def _parse_time_line(self, line):

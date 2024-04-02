@@ -614,9 +614,9 @@ class MFSimulationBase(PackageContainer):
     def _get_data_str(self, formal):
         file_mgt = self.simulation_data.mfpath
         data_str = (
-            "sim_name = {}\nsim_path = {}\nexe_name = "
-            "{}\n"
-            "\n".format(self.name, file_mgt.get_sim_path(), self.exe_name)
+            "sim_name = {}\nsim_path = {}\nexe_name = " "{}\n" "\n".format(
+                self.name, file_mgt.get_sim_path(), self.exe_name
+            )
         )
 
         for package in self._packagelist:
@@ -1535,7 +1535,7 @@ class MFSimulationBase(PackageContainer):
         if not sim_data.max_columns_user_set:
             # search for dis packages
             for model in self._models.values():
-                dis = model.get_package("dis")
+                dis = model.get_package("dis", type_only=True)
                 if dis is not None and hasattr(dis, "ncol"):
                     sim_data.max_columns_of_data = dis.ncol.get_data()
                     sim_data.max_columns_user_set = False
@@ -1631,6 +1631,7 @@ class MFSimulationBase(PackageContainer):
         normal_msg="normal termination",
         use_async=False,
         cargs=None,
+        custom_print=None,
     ):
         """
         Run the simulation.
@@ -1657,6 +1658,11 @@ class MFSimulationBase(PackageContainer):
             cargs : str or list of strings
                 Additional command line arguments to pass to the executable.
                 default is None
+            custom_print: callable
+                Optional callbale for printing. It will replace the builtin
+                print function. This is useful for shorter prints or integration
+                into other systems such as GUIs.
+                default is None, i.e. use the builtion print
 
         Returns
         --------
@@ -1683,6 +1689,7 @@ class MFSimulationBase(PackageContainer):
             normal_msg=normal_msg,
             use_async=use_async,
             cargs=cargs,
+            custom_print=custom_print,
         )
 
     def delete_output_files(self):

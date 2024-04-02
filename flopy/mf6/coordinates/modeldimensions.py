@@ -405,6 +405,10 @@ class ModelDimensions:
             self._model_grid = ModelGrid(
                 self.model_name, self.simulation_data, DiscretizationType.DISL
             )
+        elif grid_type == DiscretizationType.DIS2D:
+            self._model_grid = ModelGrid(
+                self.model_name, self.simulation_data, DiscretizationType.DIS2D
+            )
         else:
             self._model_grid = ModelGrid(
                 self.model_name,
@@ -466,9 +470,7 @@ class ModelDimensions:
                             data_item_struct,
                             path=path,
                             repeating_key=repeating_key,
-                        )[
-                            0
-                        ]
+                        )[0]
                         num_cols = num_cols + num
                         shape_consistent = (
                             shape_consistent and consistent_shape

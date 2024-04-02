@@ -2681,11 +2681,10 @@ MP7_ENDPOINT_DTYPE = np.dtype(
         ("cellface", np.int32),
     ]
 )
-MP_MIN_PLOT_FIELDS = ["x", "y", "z", "time", "k", "particleid"]
 
 
 def to_mp7_pathlines(
-    data: Union[np.recarray, pd.DataFrame]
+    data: Union[np.recarray, pd.DataFrame],
 ) -> Union[np.recarray, pd.DataFrame]:
     """
     Convert MODFLOW 6 PRT pathline data to MODPATH 7 pathline format.
@@ -2700,6 +2699,8 @@ def to_mp7_pathlines(
     np.recarray or pd.DataFrame (consistent with input type)
     """
 
+    from flopy.utils.particletrackfile import MIN_PARTICLE_TRACK_DTYPE
+
     # determine return type
     ret_type = type(data)
 
@@ -2710,13 +2711,13 @@ def to_mp7_pathlines(
     # check format
     dt = data.dtypes
     if not (
-        all(n in dt for n in MP_MIN_PLOT_FIELDS)
-        or all(n in dt for n in PRT_PATHLINE_DTYPE.fields.keys())
+        all(n in dt for n in MIN_PARTICLE_TRACK_DTYPE.names)
+        or all(n in dt for n in PRT_PATHLINE_DTYPE.names)
     ):
         raise ValueError(
             "Pathline data must contain the following fields: "
-            f"{MP_MIN_PLOT_FIELDS} for MODPATH 7, or "
-            f"{PRT_PATHLINE_DTYPE.fields.keys()} for MODFLOW 6 PRT"
+            f"{MIN_PARTICLE_TRACK_DTYPE.names} for MODPATH 7, or "
+            f"{PRT_PATHLINE_DTYPE.names} for MODFLOW 6 PRT"
         )
 
     # return early if already in MP7 format
@@ -2767,7 +2768,7 @@ def to_mp7_pathlines(
 
 
 def to_mp7_endpoints(
-    data: Union[np.recarray, pd.DataFrame]
+    data: Union[np.recarray, pd.DataFrame],
 ) -> Union[np.recarray, pd.DataFrame]:
     """
     Convert MODFLOW 6 PRT pathline data to MODPATH 7 endpoint format.
@@ -2782,6 +2783,8 @@ def to_mp7_endpoints(
     np.recarray or pd.DataFrame (consistent with input type)
     """
 
+    from flopy.utils.particletrackfile import MIN_PARTICLE_TRACK_DTYPE
+
     # determine return type
     ret_type = type(data)
 
@@ -2791,18 +2794,18 @@ def to_mp7_endpoints(
 
     # check format
     dt = data.dtypes
-    if all(n in dt for n in MP7_ENDPOINT_DTYPE.fields.keys()):
+    if all(n in dt for n in MP7_ENDPOINT_DTYPE.names):
         return (
             data if ret_type == pd.DataFrame else data.to_records(index=False)
         )
     if not (
-        all(n in dt for n in MP_MIN_PLOT_FIELDS)
-        or all(n in dt for n in PRT_PATHLINE_DTYPE.fields.keys())
+        all(n in dt for n in MIN_PARTICLE_TRACK_DTYPE.names)
+        or all(n in dt for n in PRT_PATHLINE_DTYPE.names)
     ):
         raise ValueError(
             "Pathline data must contain the following fields: "
-            f"{MP_MIN_PLOT_FIELDS} for MODPATH 7, or "
-            f"{PRT_PATHLINE_DTYPE.fields.keys()} for MODFLOW 6 PRT"
+            f"{MIN_PARTICLE_TRACK_DTYPE.names} for MODPATH 7, or "
+            f"{PRT_PATHLINE_DTYPE.names} for MODFLOW 6 PRT"
         )
 
     # return early if empty
@@ -2886,7 +2889,7 @@ def to_mp7_endpoints(
 
 
 def to_prt_pathlines(
-    data: Union[np.recarray, pd.DataFrame]
+    data: Union[np.recarray, pd.DataFrame],
 ) -> Union[np.recarray, pd.DataFrame]:
     """
     Convert MODPATH 7 pathline or endpoint data to MODFLOW 6 PRT pathline format.
@@ -2911,13 +2914,13 @@ def to_prt_pathlines(
     # check format
     dt = data.dtypes
     if not (
-        all(n in dt for n in MP7_PATHLINE_DTYPE.fields.keys())
-        or all(n in dt for n in PRT_PATHLINE_DTYPE.fields.keys())
+        all(n in dt for n in MP7_PATHLINE_DTYPE.names)
+        or all(n in dt for n in PRT_PATHLINE_DTYPE.names)
     ):
         raise ValueError(
             "Pathline data must contain the following fields: "
-            f"{MP7_PATHLINE_DTYPE.fields.keys()} for MODPATH 7, or "
-            f"{PRT_PATHLINE_DTYPE.fields.keys()} for MODFLOW 6 PRT"
+            f"{MP7_PATHLINE_DTYPE.names} for MODPATH 7, or "
+            f"{PRT_PATHLINE_DTYPE.names} for MODFLOW 6 PRT"
         )
 
     # return early if already in PRT format
