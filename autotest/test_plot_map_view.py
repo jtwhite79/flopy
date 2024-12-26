@@ -214,11 +214,8 @@ def test_map_view_contour_array_structured(function_tmpdir, ndim, rng):
             plt.clf()
         elif ndim == 2:
             # 1 layer as 2D
-            # arr[-1, :] = np.nan  # add nan to test nan handling
             pmv = PlotMapView(modelgrid=grid, layer=l)
-            contours = pmv.contour_array(
-                a=arr.reshape(nlay, nrow, ncol)[l, :, :]
-            )
+            contours = pmv.contour_array(a=arr.reshape(nlay, nrow, ncol)[l, :, :])
             plt.savefig(function_tmpdir / f"map_view_contour_{ndim}d_l{l}.png")
             plt.clf()
         elif ndim == 3:
@@ -235,3 +232,82 @@ def test_map_view_contour_array_structured(function_tmpdir, ndim, rng):
     # for ix, lev in enumerate(contours.levels):
     #     if not np.allclose(lev, levels[ix]):
     #         raise AssertionError("TriContour NaN catch Failed")
+
+
+def test_plot_limits():
+    xymin, xymax = 0, 1000
+    cellsize = 50
+    nrow = (xymax - xymin) // cellsize
+    ncol = nrow
+    nlay = 1
+
+    delc = np.full((nrow,), cellsize)
+    delr = np.full((ncol,), cellsize)
+
+    top = np.full((nrow, ncol), 100)
+    botm = np.full((nlay, nrow, ncol), 0)
+    idomain = np.ones(botm.shape, dtype=int)
+
+    grid = flopy.discretization.StructuredGrid(
+        delc=delc, delr=delr, top=top, botm=botm, idomain=idomain
+    )
+
+    fig, ax = plt.subplots()
+    user_extent = 0, 300, 0, 100
+    ax.axis(user_extent)
+
+    pmv = flopy.plot.PlotMapView(modelgrid=grid, ax=ax)
+    pmv.plot_grid()
+
+    lims = ax.axes.viewLim
+    if (lims.x0, lims.x1, lims.y0, lims.y1) != user_extent:
+        raise AssertionError("PlotMapView not checking for user scaling")
+
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    pmv = flopy.plot.PlotMapView(modelgrid=grid, ax=ax)
+    pmv.plot_grid()
+
+    lims = ax.axes.viewLim
+    if (lims.x0, lims.x1, lims.y0, lims.y1) != pmv.extent:
+        raise AssertionError("PlotMapView auto extent setting not working")
+
+    plt.close(fig)
+
+
+def test_plot_centers():
+    nlay = 1
+    nrow = 10
+    ncol = 10
+
+    delc = np.ones((nrow,))
+    delr = np.ones((ncol,))
+    top = np.ones((nrow, ncol))
+    botm = np.zeros((nlay, nrow, ncol))
+    idomain = np.ones(botm.shape, dtype=int)
+
+    idomain[0, :, 0:3] = 0
+    active_cells = np.count_nonzero(idomain)
+
+    grid = flopy.discretization.StructuredGrid(
+        delc=delc, delr=delr, top=top, botm=botm, idomain=idomain
+    )
+
+    xcenters = grid.xcellcenters.ravel()
+    ycenters = grid.ycellcenters.ravel()
+    xycenters = list(zip(xcenters, ycenters))
+
+    pmv = flopy.plot.PlotMapView(modelgrid=grid)
+    pc = pmv.plot_centers()
+    if not isinstance(pc, PathCollection):
+        raise AssertionError("plot_centers() not returning PathCollection object")
+
+    verts = pc._offsets
+    if not verts.shape[0] == active_cells:
+        raise AssertionError("plot_centers() not properly masking inactive cells")
+
+    for vert in verts:
+        vert = tuple(vert)
+        if vert not in xycenters:
+            raise AssertionError("center location not properly plotted")
