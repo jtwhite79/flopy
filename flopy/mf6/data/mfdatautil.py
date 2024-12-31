@@ -15,7 +15,7 @@ def iterable(obj, any_iterator=False):
     if any_iterator:
         try:
             my_iter = iter(obj)
-        except TypeError as te:
+        except TypeError:
             return False
         return True
     else:
@@ -78,6 +78,7 @@ def convert_data(data, data_dimensions, data_type, data_item=None, sub_amt=1):
                 if isinstance(data, str):
                     # fix any scientific formatting that python can't handle
                     data = data.replace("d", "e")
+                    data = data.replace("D", "e")
                 return float(data)
             except (ValueError, TypeError):
                 try:
@@ -154,7 +155,7 @@ def list_to_array(sarr, model_grid, kper=0, mask=False):
         return array with np.nan instead of zero
 
     Returns
-    ----------
+    -------
     out : dict of numpy.ndarrays
         Dictionary of 3-D numpy arrays containing the stress period data
         for a selected stress period. The dictionary keys are the
@@ -965,7 +966,7 @@ class ListTemplateGenerator(TemplateGenerator):
                 "Data dimensions can not be determined for  "
                 "{}. Data structure may be jagged or may contain "
                 "a keystring. Data type information is therefore "
-                "dependant on the data and can not be retreived "
+                "dependent on the data and can not be retrieved "
                 "prior to the data being loaded"
                 ".".format(data_storage.data_dimensions.structure.name)
             )

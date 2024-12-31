@@ -733,7 +733,7 @@ class MFArray(MFMultiDimVar):
                     "array" in kwargs
                     and kwargs["array"]
                     and isinstance(self, MFTransientArray)
-                    and data is not []
+                    and data is not []  # noqa: F632
                 ):
                     data = np.expand_dims(data, 0)
                 return data
@@ -1531,7 +1531,7 @@ class MFArray(MFMultiDimVar):
                 List of unique values to be excluded from the plot.
 
         Returns
-        ----------
+        -------
         out : list
             Empty list is returned if filename_base is not None. Otherwise
             a list of matplotlib.pyplot.axis is returned.
@@ -1788,6 +1788,9 @@ class MFTransientArray(MFArray, MFTransient):
                 self.get_data_prep(sto_key)
                 if super().has_data():
                     return True
+            for val in self.empty_keys.values():
+                if val:
+                    return True
             return False
         else:
             self.get_data_prep(layer)
@@ -1918,7 +1921,11 @@ class MFTransientArray(MFArray, MFTransient):
                 if list_item is None:
                     self.remove_transient_key(key)
                     del_keys.append(key)
+                    self.empty_keys[key] = False
+                elif isinstance(list_item, list) and len(list_item) == 0:
+                    self.empty_keys[key] = True
                 else:
+                    self.empty_keys[key] = False
                     self._set_data_prep(list_item, key)
                     if is_record:
                         super().set_record(list_item)
@@ -1940,7 +1947,11 @@ class MFTransientArray(MFArray, MFTransient):
                     key = 0
             if data is None:
                 self.remove_transient_key(key)
+            elif isinstance(data, list) and len(data) == 0:
+                # add empty record
+                self.empty_keys[key] = True
             else:
+                self.empty_keys[key] = False
                 self._set_data_prep(data, key)
                 super().set_data(data, multiplier, layer)
 
@@ -1962,6 +1973,8 @@ class MFTransientArray(MFArray, MFTransient):
 
         """
 
+        if key in self.empty_keys and self.empty_keys[key]:
+            return ""
         self._get_file_entry_prep(key)
         return super().get_file_entry(ext_file_action=ext_file_action)
 
@@ -2087,7 +2100,7 @@ class MFTransientArray(MFArray, MFTransient):
                 extracted. (default is zero).
 
         Returns
-        ----------
+        -------
         axes : list
             Empty list is returned if filename_base is not None. Otherwise
             a list of matplotlib.pyplot.axis is returned.

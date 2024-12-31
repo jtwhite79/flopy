@@ -63,7 +63,7 @@ class Dfn:
     -----
 
     Examples
-    ----
+    --------
     """
 
     def __init__(self):
@@ -81,7 +81,6 @@ class Dfn:
             "gwf-dis",  # dfn completed  tex updated
             "gwf-disv",  # dfn completed  tex updated
             "gwf-disu",  # dfn completed  tex updated
-            "lnf-disl",  # dfn completed  tex updated
             "gwf-ic",  # dfn completed  tex updated
             "gwf-npf",  # dfn completed  tex updated
             "gwf-sto",  # dfn completed  tex updated
@@ -180,7 +179,7 @@ class DfnPackage(Dfn):
     -----
 
     Examples
-    ----
+    --------
     """
 
     def __init__(self, package):
@@ -448,7 +447,7 @@ class DfnFile(Dfn):
     -----
 
     Examples
-    ----
+    --------
     """
 
     def __init__(self, file):
@@ -1441,7 +1440,6 @@ class MFDataStructure:
         self.parameter_name = data_item.parameter_name
         self.one_per_pkg = data_item.one_per_pkg
 
-        # self.data_item_structures_dict = {}
         self.data_item_structures = []
         self.expected_data_items = {}
         self.shape = data_item.shape
@@ -2071,7 +2069,7 @@ class MFBlockStructure:
 
 class MFInputFileStructure:
     """
-    MODFLOW Input File Stucture class.  Loads file
+    MODFLOW Input File Structure class.  Loads file
     structure information for individual input file
     types.
 
